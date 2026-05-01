@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const app = express();
 app.use(express.json());
-const PRIVATE_KEY = process.env.PRIVATE_KEY;
+const PRIVATE_KEY = Buffer.from(process.env.PRIVATE_KEY_B64, 'base64').toString('utf8');
 const MAKE_WEBHOOK_URL = process.env.MAKE_WEBHOOK_URL;
 app.get('/', function(req, res) { res.send('running'); });
 app.post('/webhook', async function(req, res) {
@@ -16,7 +16,6 @@ const body = encData.subarray(0, -16);
 const dec = crypto.createDecipheriv('aes-128-gcm', aesKey, iv);
 dec.setAuthTag(tag);
 const plain = JSON.parse(dec.update(body, undefined, 'utf8') + dec.final('utf8'));
-console.log('action:', plain.action);
 const flippedIv = Buffer.from(iv.map(function(b) { return ~b; }));
 const responseData = plain.action === 'ping' ? { version: '3.0', data: { status: 'active' } } : { version: '3.0', screen: 'SUCCESS', data: {} };
 const enc = crypto.createCipheriv('aes-128-gcm', aesKey, flippedIv);
