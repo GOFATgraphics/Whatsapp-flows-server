@@ -10,7 +10,6 @@ app.get('/', function(req, res) { res.send('running'); });
 
 app.post('/webhook', async function(req, res) {
   try {
-    // Step 1 - Decrypt incoming payload
     const encAesKey = Buffer.from(req.body.encrypted_aes_key, 'base64');
     const encData = Buffer.from(req.body.encrypted_flow_data, 'base64');
     const iv = Buffer.from(req.body.initial_vector, 'base64');
@@ -25,10 +24,9 @@ app.post('/webhook', async function(req, res) {
     const dec = crypto.createDecipheriv('aes-128-gcm', aesKey, iv);
     dec.setAuthTag(tag);
     const plain = JSON.parse(dec.update(body, undefined, 'utf8') + dec.final('utf8'));
-
     const flippedIv = Buffer.from(iv.map(function(b) { return ~b; }));
 
-    // Step 2 - Handle ping (health check)
+    // Health check
     if (plain.action === 'ping') {
       const responseData = { version: '3.0', data: { status: 'active' } };
       const enc = crypto.createCipheriv('aes-128-gcm', aesKey, flippedIv);
@@ -36,7 +34,7 @@ app.post('/webhook', async function(req, res) {
       return res.send(result.toString('base64'));
     }
 
-    // Step 3 - Forward to Make.com and WAIT for response
+    // Forward to Make.com and WAIT for response
     const makeResponse = await fetch(MAKE_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -45,9 +43,13 @@ app.post('/webhook', async function(req, res) {
 
     const responseData = await makeResponse.json();
 
-    // Step 4 - Encrypt Make.com response and send back to WhatsApp
+    // Encrypt Make.com response and send back to WhatsApp
     const enc = crypto.createCipheriv('aes-128-gcm', aesKey, flippedIv);
-    const result = Buffer.concat([enc.update(JSON.stringify(responseData), 'utf8'), enc.final(), enc.getAuthTag()]);
+    const result = Buffer.concat([
+      enc.update(JSON.stringify(responseData), 'utf8'),
+      enc.final(),
+      enc.getAuthTag()
+    ]);
     res.send(result.toString('base64'));
 
   } catch(err) {
