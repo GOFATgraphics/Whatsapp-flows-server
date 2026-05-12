@@ -36,17 +36,17 @@ app.post('/webhook', async (req, res) => {
 
     const flippedIv = Buffer.from(iv.map(b => ~b));
 
-    console.log('Action:', plain.action, 'Screen:', plain.screen);
+    console.log('→ Action:', plain.action, '| Screen:', plain.screen);
 
-    // Health Check
+    // HEALTH CHECK
     if (plain.action === 'ping') {
-      const responseData = { version: '3.0', data: { status: 'active' } };
+      const resp = { version: '3.0', data: { status: 'active' } };
       const enc = crypto.createCipheriv('aes-128-gcm', aesKey, flippedIv);
-      const result = Buffer.concat([enc.update(JSON.stringify(responseData), 'utf8'), enc.final(), enc.getAuthTag()]);
+      const result = Buffer.concat([enc.update(JSON.stringify(resp), 'utf8'), enc.final(), enc.getAuthTag()]);
       return res.send(result.toString('base64'));
     }
 
-    // INITIAL LOAD - Send options for first screen
+    // INITIAL SCREEN LOAD - This is the critical part
     if (plain.action === 'INIT' || !plain.screen || plain.screen === 'Trade_Details') {
       const responseData = {
         version: "3.0",
@@ -62,12 +62,13 @@ app.post('/webhook', async (req, res) => {
           ]
         }
       };
+
       const enc = crypto.createCipheriv('aes-128-gcm', aesKey, flippedIv);
       const result = Buffer.concat([enc.update(JSON.stringify(responseData), 'utf8'), enc.final(), enc.getAuthTag()]);
       return res.send(result.toString('base64'));
     }
 
-    // Forward other submissions to Make.com
+    // Everything else → Forward to Make.com
     const makeResponse = await fetch(MAKE_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -75,12 +76,9 @@ app.post('/webhook', async (req, res) => {
     });
 
     let responseData = { version: "3.0", screen: "success_screen", data: {} };
-
     try {
       const text = await makeResponse.text();
-      if (text && text.trim()) {
-        responseData = JSON.parse(text);
-      }
+      if (text && text.trim()) responseData = JSON.parse(text);
     } catch (e) {}
 
     const enc = crypto.createCipheriv('aes-128-gcm', aesKey, flippedIv);
