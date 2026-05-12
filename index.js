@@ -29,7 +29,7 @@ const flippedIv = Buffer.from(iv.map(function(b) { return ~b; }));
 
 console.log('Decrypted payload:', JSON.stringify(plain, null, 2));
 
-// Handle ping (health check)
+// Handle ping
 if (plain.action === 'ping') {
   const responseData = { version: '3.0', data: { status: 'active' } };
   const enc = crypto.createCipheriv('aes-128-gcm', aesKey, flippedIv);
@@ -37,7 +37,7 @@ if (plain.action === 'ping') {
   return res.send(result.toString('base64'));
 }
 
-// Handle INIT (first screen load)
+// Handle INIT
 if (plain.action === 'INIT') {
   const responseData = {
     version: '3.0',
@@ -58,7 +58,7 @@ if (plain.action === 'INIT') {
   return res.send(result.toString('base64'));
 }
 
-// Forward everything else to Make.com and wait for response
+// Forward to Make.com
 console.log('Forwarding to Make.com:', JSON.stringify(plain, null, 2));
 
 const makeResponse = await fetch(MAKE_WEBHOOK_URL, {
@@ -67,7 +67,6 @@ const makeResponse = await fetch(MAKE_WEBHOOK_URL, {
   body: JSON.stringify(plain)
 });
 
-// FIX: Use .text() first so we don't crash if Make returns non-JSON
 const rawText = await makeResponse.text();
 console.log('Make.com raw response:', rawText);
 
@@ -75,10 +74,7 @@ let responseData;
 try {
   responseData = JSON.parse(rawText);
 } catch (parseErr) {
-  // Make.com returned "Accepted", "Scenario failed", or other plain text
   console.error('Make.com returned non-JSON:', rawText);
-
-  // Return a safe fallback so WhatsApp doesn't crash
   responseData = {
     version: '3.0',
     screen: 'Trade_Details',
@@ -107,7 +103,7 @@ const result = Buffer.concat([
 res.send(result.toString('base64'));
 ```
 
-} catch(err) {
+} catch (err) {
 console.error(‘Unhandled error:’, err);
 res.status(500).send(‘error’);
 }
