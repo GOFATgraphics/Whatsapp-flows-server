@@ -36,7 +36,7 @@ app.post('/webhook', async (req, res) => {
 
     const flippedIv = Buffer.from(iv.map(b => ~b));
 
-    console.log('Screen:', plain.screen, 'Action:', plain.action);
+    console.log('Action:', plain.action, 'Screen:', plain.screen);
 
     // Health Check
     if (plain.action === 'ping') {
@@ -46,8 +46,8 @@ app.post('/webhook', async (req, res) => {
       return res.send(result.toString('base64'));
     }
 
-    // FIRST SCREEN LOAD - Send options
-    if (plain.action === 'INIT' || plain.screen === 'Trade_Details' || !plain.screen) {
+    // INITIAL LOAD - Send options for first screen
+    if (plain.action === 'INIT' || !plain.screen || plain.screen === 'Trade_Details') {
       const responseData = {
         version: "3.0",
         screen: "Trade_Details",
@@ -67,7 +67,7 @@ app.post('/webhook', async (req, res) => {
       return res.send(result.toString('base64'));
     }
 
-    // All other actions → Forward to Make.com
+    // Forward other submissions to Make.com
     const makeResponse = await fetch(MAKE_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -78,7 +78,9 @@ app.post('/webhook', async (req, res) => {
 
     try {
       const text = await makeResponse.text();
-      if (text && text.trim()) responseData = JSON.parse(text);
+      if (text && text.trim()) {
+        responseData = JSON.parse(text);
+      }
     } catch (e) {}
 
     const enc = crypto.createCipheriv('aes-128-gcm', aesKey, flippedIv);
