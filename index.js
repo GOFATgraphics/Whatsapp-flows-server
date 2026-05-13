@@ -109,17 +109,28 @@ app.post('/webhook', async (req, res) => {
 
     // ================= NEW_TRADE_SCREEN =================
     if (plain.screen === "New_Trade_Screen") {
-      console.log("Full payload:", JSON.stringify(plain, null, 2));
-
       try {
         const response = await fetch(MAKE_WEBHOOK_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            action: "new_trade",
-            trade_text: plain.data?.trade_text,
-            direction: plain.data?.direction,
-            flow_token: plain.flow_token
+            entry: [{
+              changes: [{
+                value: {
+                  messaging_product: "whatsapp",
+                  metadata: {
+                    phone_number_id: "1092681490597909"
+                  },
+                  messages: [{
+                    from: plain.flow_token,
+                    type: "text",
+                    text: {
+                      body: `[${plain.data?.direction?.toUpperCase()}] ${plain.data?.trade_text}`
+                    }
+                  }]
+                }
+              }]
+            }]
           }),
         });
         const text = await response.text();
@@ -137,17 +148,28 @@ app.post('/webhook', async (req, res) => {
 
     // ================= ADDENDUM_SCREEN =================
     if (plain.screen === "Addendum_Screen") {
-      console.log("Full payload:", JSON.stringify(plain, null, 2));
-
       try {
         const response = await fetch(MAKE_WEBHOOK_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            action: "addendum",
-            selected_trade: plain.data?.selected_trade,
-            addendum_text: plain.data?.addendum_text,
-            flow_token: plain.flow_token
+            entry: [{
+              changes: [{
+                value: {
+                  messaging_product: "whatsapp",
+                  metadata: {
+                    phone_number_id: "1092681490597909"
+                  },
+                  messages: [{
+                    from: plain.flow_token,
+                    type: "text",
+                    text: {
+                      body: `[ADDENDUM] Trade: ${plain.data?.selected_trade}\n${plain.data?.addendum_text}`
+                    }
+                  }]
+                }
+              }]
+            }]
           }),
         });
         const text = await response.text();
