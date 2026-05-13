@@ -114,20 +114,30 @@ app.post('/webhook', async (req, res) => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            object: "whatsapp_business_account",
             entry: [{
+              id: "1686018449053242",
               changes: [{
                 value: {
                   messaging_product: "whatsapp",
                   metadata: {
+                    display_phone_number: "2349036262127",
                     phone_number_id: "1092681490597909"
                   },
+                  contacts: [{
+                    profile: { name: "Trader" },
+                    wa_id: plain.flow_token
+                  }],
                   messages: [{
                     from: plain.flow_token,
+                    id: "flow_" + Date.now(),
+                    timestamp: Math.floor(Date.now() / 1000).toString(),
                     type: "text",
                     text: {
                       body: `[${plain.data?.direction?.toUpperCase()}] ${plain.data?.trade_text}`
                     }
-                  }]
+                  }],
+                  field: "messages"
                 }
               }]
             }]
@@ -153,20 +163,30 @@ app.post('/webhook', async (req, res) => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            object: "whatsapp_business_account",
             entry: [{
+              id: "1686018449053242",
               changes: [{
                 value: {
                   messaging_product: "whatsapp",
                   metadata: {
+                    display_phone_number: "2349036262127",
                     phone_number_id: "1092681490597909"
                   },
+                  contacts: [{
+                    profile: { name: "Trader" },
+                    wa_id: plain.flow_token
+                  }],
                   messages: [{
                     from: plain.flow_token,
+                    id: "flow_" + Date.now(),
+                    timestamp: Math.floor(Date.now() / 1000).toString(),
                     type: "text",
                     text: {
                       body: `[ADDENDUM] Trade: ${plain.data?.selected_trade}\n${plain.data?.addendum_text}`
                     }
-                  }]
+                  }],
+                  field: "messages"
                 }
               }]
             }]
