@@ -2,42 +2,32 @@ const express = require('express');
 const crypto = require('crypto');
 
 const app = express();
-
 app.use(express.json());
 
-const PRIVATE_KEY = Buffer.from(
-  process.env.PRIVATE_KEY_B64,
-  'base64'
-).toString('utf8');
-
+const PRIVATE_KEY_B64 = process.env.PRIVATE_KEY_B64;
 const MAKE_WEBHOOK_URL = process.env.MAKE_WEBHOOK_URL;
 
-app.get('/', function (req, res) {
-  res.send('running');
-});
-
-app.post('/webhook', async function (req, res) {
+app.post('/webhook', async (req, res) => {
   try {
-    const encAesKey = Buffer.from(
-      req.body.encrypted_aes_key,
-      'base64'
-    );
+    const encAesKey = Buffer.from(req.body.encrypted_aes_key, 'base64');
+    const encData = Buffer.from(req.body.encrypted_flow_data, 'base64');
+    const iv = Buffer.from(req.body.initial_vector, 'base64');
 
-    const encData = Buffer.from(
-      req.body.encrypted_flow_data,
-      'base64'
-    );
+    const privateKeyPem = Buffer.from(PRIVATE_KEY_B64, 'base64')
+      .toString('utf8')
+      .trim();
 
-    const iv = Buffer.from(
-      req.body.initial_vector,
-      'base64'
-    );
+    const privateKey = crypto.createPrivateKey({
+      key: privateKeyPem,
+      format: 'pem',
+      type: 'pkcs8',
+    });
 
     const aesKey = crypto.privateDecrypt(
       {
-        key: PRIVATE_KEY,
+        key: privateKey,
         padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-        oaepHash: 'sha256'
+        oaepHash: 'sha256',
       },
       encAesKey
     );
@@ -45,139 +35,100 @@ app.post('/webhook', async function (req, res) {
     const tag = encData.subarray(-16);
     const body = encData.subarray(0, -16);
 
-    const dec = crypto.createDecipheriv(
-      'aes-128-gcm',
-      aesKey,
-      iv
-    );
-
-    dec.setAuthTag(tag);
+    const decipher = crypto.createDecipheriv('aes-128-gcm', aesKey, iv);
+    decipher.setAuthTag(tag);
 
     const plain = JSON.parse(
-      dec.update(body, undefined, 'utf8') +
-      dec.final('utf8')
+      decipher.update(body, undefined, 'utf8') + decipher.final('utf8')
     );
 
-    const flippedIv = Buffer.from(
-      iv.map(function (b) {
-        return ~b;
-      })
-    );
+    const flippedIv = Buffer.from(iv.map(b => ~b));
 
-    const encrypt = (data) => {
-      const enc = crypto.createCipheriv(
-        'aes-128-gcm',
-        aesKey,
-        flippedIv
-      );
+    console.log('Action:', plain.action, 'Screen:', plain.screen);
 
-      return Buffer.concat([
-        enc.update(JSON.stringify(data), 'utf8'),
-        enc.final(),
-        enc.getAuthTag()
-      ]).toString('base64');
-    };
-
-    // Health check
+    // ================= PING =================
     if (plain.action === 'ping') {
-      return res.send(
-        encrypt({
-          version: '3.0',
-          data: {
-            status: 'active'
-          }
-        })
-      );
+      return send(res, aesKey, flippedIv, { version: "7.0", data: { status: "active" } });
     }
 
-    // Initial screen load
-    if (plain.action === 'INIT') {
-      return res.send(
-        encrypt({
-          version: '3.0',
-          screen: 'Trade_Details',
-          data: {}
-        })
-      );
-    }
-
-    // New Trade submitted
-    // Fire to Make.com WITHOUT waiting
-    if (plain.screen === 'New_Trade_Screen') {
-      fetch(MAKE_WEBHOOK_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(plain)
-      }).catch((err) => {
-        console.error('Make.com error:', err);
+    // ================= INIT =================
+    if (plain.action === 'INIT' || !plain.screen) {
+      return send(res, aesKey, flippedIv, {
+        version: "7.0",
+        screen: "Trade_Details",
+        data: {
+          direction_options: [
+            { id: "purchase", title: "Purchase" },
+            { id: "sale", title: "Sale" }
+          ],
+          category_options: [
+            { id: "new_trade", title: "New Trade" },
+            { id: "addendum", title: "Addendum" }
+          ]
+        }
       });
+    }
 
-      return res.send(
-        encrypt({
-          version: '3.0',
-          screen: 'success_screen',
+    // ================= TRADE_DETAILS =================
+    if (plain.screen === "Trade_Details") {
+      const category = plain.data?.trade_category;
+
+      if (category === "new_trade") {
+        return send(res, aesKey, flippedIv, {
+          version: "7.0",
+          screen: "New_Trade_Screen",
           data: {}
-        })
-      );
-    }
-
-    // Trade_Details
-    // Route to next screen
-    if (plain.screen === 'Trade_Details') {
-      if (plain.data.trade_category === 'new_trade') {
-        return res.send(
-          encrypt({
-            version: '3.0',
-            screen: 'New_Trade_Screen',
-            data: {}
-          })
-        );
+        });
       }
 
-      if (plain.data.trade_category === 'addendum') {
-        // Fetch approved trades from Make.com
-        const makeResponse = await fetch(
-          MAKE_WEBHOOK_URL,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(plain)
+      if (category === "addendum") {
+        let approvedTrades = [{ id: "MC-0000000000", title: "No trades available" }];
+
+        try {
+          const response = await fetch(MAKE_WEBHOOK_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "get_approved_trades" }),
+          });
+          const text = await response.text();
+          if (text && text !== "Accepted") {
+            const makeData = JSON.parse(text);
+            if (makeData.approved_trades) approvedTrades = makeData.approved_trades;
           }
-        );
+        } catch (e) {
+          console.log("Make error:", e.message);
+        }
 
-        const responseData = await makeResponse.json();
-
-        return res.send(encrypt(responseData));
+        return send(res, aesKey, flippedIv, {
+          version: "7.0",
+          screen: "Addendum_Screen",
+          data: { approved_trades: approvedTrades }
+        });
       }
     }
 
-    // Addendum submitted
-    // Forward to Make.com and wait
-    const makeResponse = await fetch(
-      MAKE_WEBHOOK_URL,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(plain)
-      }
-    );
-
-    const responseData = await makeResponse.json();
-
-    res.send(encrypt(responseData));
-
-  } catch (err) {
-    console.error(err);
-    res.status(500).send('error');
-  }
-});
-
-app.listen(process.env.PORT || 3000, function () {
-  console.log('running');
-})
+    // ================= NEW_TRADE_SCREEN — FIRE AND FORGET =================
+    if (plain.screen === "New_Trade_Screen") {
+      // Fire to Make.com WITHOUT waiting
+      fetch(MAKE_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          object: "whatsapp_business_account",
+          entry: [{
+            id: "1686018449053242",
+            changes: [{
+              value: {
+                messaging_product: "whatsapp",
+                metadata: {
+                  display_phone_number: "2349036262127",
+                  phone_number_id: "1092681490597909"
+                },
+                contacts: [{
+                  profile: { name: "Trader" },
+                  wa_id: plain.flow_token
+                }],
+                messages: [{
+                  from: plain.flow_token,
+                  id: "flow_" + Date.now(),
+                  timestamp: Math.floor(Date.now() /​​​​​​​​​​​​​​​​
