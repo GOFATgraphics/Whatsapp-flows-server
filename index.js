@@ -13,8 +13,6 @@ const FLOW_HANDLER_WEBHOOK_URL =
 
 app.post('/webhook', async (req, res) => {
   try {
-    // ================= DECRYPT =================
-
     const encAesKey = Buffer.from(
       req.body.encrypted_aes_key,
       'base64'
@@ -37,11 +35,12 @@ app.post('/webhook', async (req, res) => {
       .toString('utf8')
       .trim();
 
-    const privateKey = crypto.createPrivateKey({
-      key: privateKeyPem,
-      format: 'pem',
-      type: 'pkcs8',
-    });
+    const privateKey =
+      crypto.createPrivateKey({
+        key: privateKeyPem,
+        format: 'pem',
+        type: 'pkcs8',
+      });
 
     const aesKey = crypto.privateDecrypt(
       {
@@ -57,11 +56,12 @@ app.post('/webhook', async (req, res) => {
     const tag = encData.subarray(-16);
     const body = encData.subarray(0, -16);
 
-    const decipher = crypto.createDecipheriv(
-      'aes-128-gcm',
-      aesKey,
-      iv
-    );
+    const decipher =
+      crypto.createDecipheriv(
+        'aes-128-gcm',
+        aesKey,
+        iv
+      );
 
     decipher.setAuthTag(tag);
 
@@ -121,12 +121,16 @@ app.post('/webhook', async (req, res) => {
               title: 'New Trade',
             },
             {
-              id: 'addendum',
-              title: 'Addendum',
-            },
-            {
               id: 'linked_trade',
               title: 'Linked Trade',
+            },
+            {
+              id: 'modification',
+              title: 'Modification',
+            },
+            {
+              id: 'addendum',
+              title: 'Addendum',
             },
           ],
         },
@@ -142,6 +146,8 @@ app.post('/webhook', async (req, res) => {
       const direction =
         plain.data?.direction;
 
+      // ---- New Trade ----
+
       if (trade_type === 'new_trade') {
         return send(res, aesKey, flippedIv, {
           version: '7.0',
@@ -152,17 +158,138 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
+      // ---- Linked Trade ----
+
       if (
-        trade_type === 'linked_trade'
+        trade_type ===
+        'linked_trade'
       ) {
+        let active_trades = [
+          {
+            id: 'none',
+            title:
+              'No active trades found',
+          },
+        ];
+
+        try {
+          const response = await fetch(
+            FLOW_HANDLER_WEBHOOK_URL,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type':
+                  'application/json',
+              },
+              body: JSON.stringify({
+                action:
+                  'get_active_trades',
+              }),
+            }
+          );
+
+          const text =
+            await response.text();
+
+          if (
+            text &&
+            text !== 'Accepted'
+          ) {
+            const data =
+              JSON.parse(text);
+
+            if (
+              data.active_trades
+                ?.length > 0
+            ) {
+              active_trades =
+                data.active_trades;
+            }
+          }
+        } catch (e) {
+          console.log(
+            'Flow Handler error:',
+            e.message
+          );
+        }
+
         return send(res, aesKey, flippedIv, {
           version: '7.0',
-          screen: 'Linked_Trade_Screen',
+          screen:
+            'Linked_Trade_Screen',
           data: {
             direction,
+            active_trades,
           },
         });
       }
+
+      // ---- Modification ----
+
+      if (
+        trade_type ===
+        'modification'
+      ) {
+        let approved_trades = [
+          {
+            id: 'none',
+            title:
+              'No active trades found',
+          },
+        ];
+
+        try {
+          const response = await fetch(
+            FLOW_HANDLER_WEBHOOK_URL,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type':
+                  'application/json',
+              },
+              body: JSON.stringify({
+                action:
+                  'get_approved_trades',
+              }),
+            }
+          );
+
+          const text =
+            await response.text();
+
+          if (
+            text &&
+            text !== 'Accepted'
+          ) {
+            const data =
+              JSON.parse(text);
+
+            if (
+              data.approved_trades
+                ?.length > 0
+            ) {
+              approved_trades =
+                data.approved_trades;
+            }
+          }
+        } catch (e) {
+          console.log(
+            'Flow Handler error:',
+            e.message
+          );
+        }
+
+        return send(res, aesKey, flippedIv, {
+          version: '7.0',
+          screen:
+            'Modification_Screen',
+          data: {
+            approved_trades,
+          },
+        });
+      }
+
+      // ---- Addendum ----
 
       if (trade_type === 'addendum') {
         let approved_trades = [
@@ -230,8 +357,6 @@ app.post('/webhook', async (req, res) => {
       plain.screen ===
       'New_Trade_Screen'
     ) {
-      // Fire and forget — respond immediately
-
       fetch(FLOW_HANDLER_WEBHOOK_URL, {
         method: 'POST',
         headers: {
@@ -266,8 +391,6 @@ app.post('/webhook', async (req, res) => {
       plain.screen ===
       'Addendum_Screen'
     ) {
-      // Fire and forget — respond immediately
-
       fetch(FLOW_HANDLER_WEBHOOK_URL, {
         method: 'POST',
         headers: {
@@ -296,14 +419,47 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
+    // ================= MODIFICATION SCREEN =================
+
+    if (
+      plain.screen ===
+      'Modification_Screen'
+    ) {
+      fetch(FLOW_HANDLER_WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type':
+            'application/json',
+        },
+        body: JSON.stringify({
+          action: 'modification',
+          selected_trade:
+            plain.data?.selected_trade,
+          modification_text:
+            plain.data
+              ?.modification_text,
+          from: plain.flow_token,
+        }),
+      }).catch((e) =>
+        console.log(
+          'Flow Handler error:',
+          e.message
+        )
+      );
+
+      return send(res, aesKey, flippedIv, {
+        version: '7.0',
+        screen: 'Success_Screen',
+        data: {},
+      });
+    }
+
     // ================= LINKED TRADE SCREEN =================
 
     if (
       plain.screen ===
       'Linked_Trade_Screen'
     ) {
-      // Fire and forget — respond immediately
-
       fetch(FLOW_HANDLER_WEBHOOK_URL, {
         method: 'POST',
         headers: {
@@ -314,9 +470,8 @@ app.post('/webhook', async (req, res) => {
           action: 'linked_trade',
           direction:
             plain.data?.direction,
-          parent_reference:
-            plain.data
-              ?.parent_reference,
+          parent_trade:
+            plain.data?.parent_trade,
           trade_text:
             plain.data?.trade_text,
           from: plain.flow_token,
