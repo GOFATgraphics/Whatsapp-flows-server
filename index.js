@@ -7,6 +7,49 @@ app.use(express.json());
 const PRIVATE_KEY_B64 = process.env.PRIVATE_KEY_B64;
 const FLOW_HANDLER_WEBHOOK_URL = process.env.FLOW_HANDLER_WEBHOOK_URL;
 
+// ================= TRADE CACHE =================
+let approvedTradesCache = [];
+let activeTradesCache = [];
+
+async function refreshCache() {
+  try {
+    const r1 = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get_approved_trades' })
+    });
+    const t1 = await r1.text();
+    if (t1 && t1 !== 'Accepted') {
+      const d1 = JSON.parse(t1);
+      if (d1.approved_trades?.length > 0) approvedTradesCache = d1.approved_trades;
+    }
+  } catch (e) {
+    console.log('Approved trades cache error:', e.message);
+  }
+
+  try {
+    const r2 = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get_active_trades' })
+    });
+    const t2 = await r2.text();
+    if (t2 && t2 !== 'Accepted') {
+      const d2 = JSON.parse(t2);
+      if (d2.active_trades?.length > 0) activeTradesCache = d2.active_trades;
+    }
+  } catch (e) {
+    console.log('Active trades cache error:', e.message);
+  }
+
+  console.log('Cache refreshed — approved:', approvedTradesCache.length, 'active:', activeTradesCache.length);
+}
+
+// Refresh every 5 minutes
+setInterval(refreshCache, 5 * 60 * 1000);
+// Load on startup
+refreshCache();
+
 app.post('/webhook', async (req, res) => {
   try {
     const encAesKey = Buffer.from(req.body.encrypted_aes_key, 'base64');
@@ -56,6 +99,9 @@ app.post('/webhook', async (req, res) => {
 
     // ================= INIT =================
     if (plain.action === 'INIT' || !plain.screen) {
+      // Refresh cache in background
+      refreshCache().catch(() => {});
+
       return send(res, aesKey, flippedIv, {
         version: '7.0',
         screen: 'Trade_Details',
@@ -74,20 +120,6 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
-    // ================= HELPER — fetch with timeout =================
-    async function fetchWithTimeout(url, options, timeoutMs = 4000) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        const response = await fetch(url, { ...options, signal: controller.signal });
-        clearTimeout(timeout);
-        return response;
-      } catch (e) {
-        clearTimeout(timeout);
-        throw e;
-      }
-    }
-
     // ================= TRADE DETAILS SCREEN =================
     if (plain.screen === 'Trade_Details') {
       const trade_type = plain.data?.trade_type;
@@ -95,7 +127,6 @@ app.post('/webhook', async (req, res) => {
 
       console.log('trade_type:', trade_type, 'direction:', direction);
 
-      // ---- New Trade ----
       if (trade_type === 'new_trade') {
         return send(res, aesKey, flippedIv, {
           version: '7.0',
@@ -104,26 +135,10 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
-      // ---- Linked Trade ----
       if (trade_type === 'linked_trade') {
-        let active_trades = [{ id: 'none', title: 'No active trades found' }];
-
-        try {
-          const response = await fetchWithTimeout(FLOW_HANDLER_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'get_active_trades' })
-          });
-          const text = await response.text();
-          if (text && text !== 'Accepted') {
-            const data = JSON.parse(text);
-            if (data.active_trades?.length > 0) {
-              active_trades = data.active_trades;
-            }
-          }
-        } catch (e) {
-          console.log('Flow Handler error:', e.message);
-        }
+        const active_trades = activeTradesCache.length > 0
+          ? activeTradesCache
+          : [{ id: 'none', title: 'No active trades found' }];
 
         return send(res, aesKey, flippedIv, {
           version: '7.0',
@@ -132,26 +147,10 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
-      // ---- Modification ----
       if (trade_type === 'modification') {
-        let approved_trades = [{ id: 'none', title: 'No approved trades found' }];
-
-        try {
-          const response = await fetchWithTimeout(FLOW_HANDLER_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'get_approved_trades' })
-          });
-          const text = await response.text();
-          if (text && text !== 'Accepted') {
-            const data = JSON.parse(text);
-            if (data.approved_trades?.length > 0) {
-              approved_trades = data.approved_trades;
-            }
-          }
-        } catch (e) {
-          console.log('Flow Handler error:', e.message);
-        }
+        const approved_trades = approvedTradesCache.length > 0
+          ? approvedTradesCache
+          : [{ id: 'none', title: 'No approved trades found' }];
 
         return send(res, aesKey, flippedIv, {
           version: '7.0',
@@ -160,26 +159,10 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
-      // ---- Addendum ----
       if (trade_type === 'addendum') {
-        let approved_trades = [{ id: 'none', title: 'No approved trades found' }];
-
-        try {
-          const response = await fetchWithTimeout(FLOW_HANDLER_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'get_approved_trades' })
-          });
-          const text = await response.text();
-          if (text && text !== 'Accepted') {
-            const data = JSON.parse(text);
-            if (data.approved_trades?.length > 0) {
-              approved_trades = data.approved_trades;
-            }
-          }
-        } catch (e) {
-          console.log('Flow Handler error:', e.message);
-        }
+        const approved_trades = approvedTradesCache.length > 0
+          ? approvedTradesCache
+          : [{ id: 'none', title: 'No approved trades found' }];
 
         return send(res, aesKey, flippedIv, {
           version: '7.0',
