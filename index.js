@@ -57,7 +57,10 @@ app.post('/webhook', async (req, res) => {
         version: '7.0',
         screen: 'Trade_Details',
         data: {
-          direction_options: [{ id: 'purchase', title: 'Purchase' }, { id: 'sale', title: 'Sale' }],
+          direction_options: [
+            { id: 'purchase', title: 'Purchase' },
+            { id: 'sale', title: 'Sale' }
+          ],
           trade_type_options: [
             { id: 'new_trade', title: 'New Trade' },
             { id: 'linked_trade', title: 'Linked Trade' },
@@ -74,9 +77,14 @@ app.post('/webhook', async (req, res) => {
       const direction = plain.data?.direction;
 
       if (trade_type === 'new_trade') {
-        return send(res, aesKey, flippedIv, { version: '7.0', screen: 'New_Trade_Screen', data: { direction } });
+        return send(res, aesKey, flippedIv, { 
+          version: '7.0', 
+          screen: 'New_Trade_Screen', 
+          data: { direction } 
+        });
       }
 
+      // ================= LINKED TRADE =================
       if (trade_type === 'linked_trade') {
         let active_trades = [{ id: 'none', title: 'No active trades found' }];
 
@@ -87,11 +95,17 @@ app.post('/webhook', async (req, res) => {
             body: JSON.stringify({ action: 'get_approved_trades' })
           });
           const text = await response.text();
+          console.log('Linked Trade API Response:', text);
+
           if (text && text !== 'Accepted') {
             const data = JSON.parse(text);
-            if (data.approved_trades?.length > 0) active_trades = data.approved_trades;
+            if (data.approved_trades?.length > 0) {
+              active_trades = data.approved_trades;
+            }
           }
-        } catch (e) { console.log('Error fetching trades:', e.message); }
+        } catch (e) {
+          console.error('Error fetching active trades:', e.message);
+        }
 
         return send(res, aesKey, flippedIv, {
           version: '7.0',
@@ -100,6 +114,7 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
+      // ================= ADDENDUM & MODIFICATION =================
       if (trade_type === 'addendum' || trade_type === 'modification') {
         let approved_trades = [{ id: 'none', title: 'No approved trades found' }];
 
@@ -110,18 +125,29 @@ app.post('/webhook', async (req, res) => {
             body: JSON.stringify({ action: 'get_approved_trades' })
           });
           const text = await response.text();
+          console.log(`${trade_type} API Response:`, text);
+
           if (text && text !== 'Accepted') {
             const data = JSON.parse(text);
-            if (data.approved_trades?.length > 0) approved_trades = data.approved_trades;
+            if (data.approved_trades?.length > 0) {
+              approved_trades = data.approved_trades;
+            }
           }
-        } catch (e) { console.log('Error fetching trades:', e.message); }
+        } catch (e) {
+          console.error(`Error fetching trades for ${trade_type}:`, e.message);
+        }
 
         const screen = trade_type === 'addendum' ? 'Addendum_Screen' : 'Modification_Screen';
-        return send(res, aesKey, flippedIv, { version: '7.0', screen, data: { approved_trades } });
+
+        return send(res, aesKey, flippedIv, {
+          version: '7.0',
+          screen,
+          data: { approved_trades }
+        });
       }
     }
 
-    // ================= SUBMISSIONS - IMMEDIATE SUCCESS =================
+    // ================= SUBMISSIONS =================
     const screen = plain.screen;
 
     if (screen === 'New_Trade_Screen') {
@@ -176,7 +202,6 @@ app.post('/webhook', async (req, res) => {
 
 // ====================== HELPERS ======================
 function fireAndForget(payload) {
-  // Fire the request in background without waiting
   fetch(FLOW_HANDLER_WEBHOOK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -184,7 +209,7 @@ function fireAndForget(payload) {
   })
   .then(res => res.text())
   .then(text => console.log(`Background ${payload.action} response:`, text))
-  .catch(e => console.log(`Background error (${payload.action}):`, e.message));
+  .catch(e => console.error(`Background error (${payload.action}):`, e.message));
 }
 
 function sendSuccess(res, aesKey, iv) {
