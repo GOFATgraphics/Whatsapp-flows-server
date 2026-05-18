@@ -67,8 +67,9 @@ app.post('/webhook', async (req, res) => {
           ],
           trade_type_options: [
             { id: 'new_trade', title: 'New Trade' },
-            { id: 'addendum', title: 'Addendum' },
-            { id: 'linked_trade', title: 'Linked Trade' }
+            { id: 'linked_trade', title: 'Linked Trade' },
+            { id: 'modification', title: 'Modification' },
+            { id: 'addendum', title: 'Addendum' }
           ]
         }
       });
@@ -83,9 +84,7 @@ app.post('/webhook', async (req, res) => {
         return send(res, aesKey, flippedIv, {
           version: '7.0',
           screen: 'New_Trade_Screen',
-          data: {
-            direction: direction
-          }
+          data: { direction }
         });
       }
 
@@ -93,13 +92,11 @@ app.post('/webhook', async (req, res) => {
         return send(res, aesKey, flippedIv, {
           version: '7.0',
           screen: 'Linked_Trade_Screen',
-          data: {
-            direction: direction
-          }
+          data: { direction }
         });
       }
 
-      if (trade_type === 'addendum') {
+      if (trade_type === 'addendum' || trade_type === 'modification') {
         let approved_trades = [{ id: 'none', title: 'No approved trades found' }];
 
         try {
@@ -119,9 +116,11 @@ app.post('/webhook', async (req, res) => {
           console.log('Flow Handler error:', e.message);
         }
 
+        const screen = trade_type === 'addendum' ? 'Addendum_Screen' : 'Modification_Screen';
+
         return send(res, aesKey, flippedIv, {
           version: '7.0',
-          screen: 'Addendum_Screen',
+          screen: screen,
           data: { approved_trades }
         });
       }
@@ -129,95 +128,84 @@ app.post('/webhook', async (req, res) => {
 
     // ================= NEW TRADE SCREEN =================
     if (plain.screen === 'New_Trade_Screen') {
-      try {
-        const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'new_trade',
-            direction: plain.data?.direction,
-            trade_text: plain.data?.trade_text,
-            from: plain.flow_token
-          })
-        });
-        const text = await response.text();
-        console.log('Flow Handler response:', text);
-      } catch (e) {
-        console.log('Flow Handler error:', e.message);
-      }
-
-      return send(res, aesKey, flippedIv, {
-        version: '7.0',
-        screen: 'Success_Screen',
-        data: {}
+      await forwardToHandler({
+        action: 'new_trade',
+        direction: plain.data?.direction,
+        trade_text: plain.data?.trade_text,
+        from: plain.flow_token
       });
-    }
 
-    // ================= ADDENDUM SCREEN =================
-    if (plain.screen === 'Addendum_Screen') {
-      try {
-        const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'addendum',
-            selected_trade: plain.data?.selected_trade,
-            addendum_text: plain.data?.addendum_text,
-            from: plain.flow_token
-          })
-        });
-        const text = await response.text();
-        console.log('Flow Handler response:', text);
-      } catch (e) {
-        console.log('Flow Handler error:', e.message);
-      }
-
-      return send(res, aesKey, flippedIv, {
-        version: '7.0',
-        screen: 'Success_Screen',
-        data: {}
-      });
+      return sendSuccess(res, aesKey, flippedIv);
     }
 
     // ================= LINKED TRADE SCREEN =================
     if (plain.screen === 'Linked_Trade_Screen') {
-      try {
-        const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'linked_trade',
-            direction: plain.data?.direction,
-            parent_reference: plain.data?.parent_reference,
-            trade_text: plain.data?.trade_text,
-            from: plain.flow_token
-          })
-        });
-        const text = await response.text();
-        console.log('Flow Handler response:', text);
-      } catch (e) {
-        console.log('Flow Handler error:', e.message);
-      }
-
-      return send(res, aesKey, flippedIv, {
-        version: '7.0',
-        screen: 'Success_Screen',
-        data: {}
+      await forwardToHandler({
+        action: 'linked_trade',
+        direction: plain.data?.direction,
+        parent_trade: plain.data?.parent_trade,        // Fixed
+        trade_text: plain.data?.trade_text,
+        from: plain.flow_token
       });
+
+      return sendSuccess(res, aesKey, flippedIv);
+    }
+
+    // ================= ADDENDUM SCREEN =================
+    if (plain.screen === 'Addendum_Screen') {
+      await forwardToHandler({
+        action: 'addendum',
+        selected_trade: plain.data?.selected_trade,
+        addendum_text: plain.data?.addendum_text,
+        from: plain.flow_token
+      });
+
+      return sendSuccess(res, aesKey, flippedIv);
+    }
+
+    // ================= MODIFICATION SCREEN =================
+    if (plain.screen === 'Modification_Screen') {
+      await forwardToHandler({
+        action: 'modification',
+        selected_trade: plain.data?.selected_trade,
+        modification_text: plain.data?.modification_text,
+        from: plain.flow_token
+      });
+
+      return sendSuccess(res, aesKey, flippedIv);
     }
 
     // ================= FALLBACK =================
-    return send(res, aesKey, flippedIv, {
-      version: '7.0',
-      screen: 'Success_Screen',
-      data: {}
-    });
+    return sendSuccess(res, aesKey, flippedIv);
 
   } catch (err) {
     console.error('Server error:', err);
     res.status(500).send('error');
   }
 });
+
+// Helper Functions
+async function forwardToHandler(payload) {
+  try {
+    const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const text = await response.text();
+    console.log(`Handler response for ${payload.action}:`, text);
+  } catch (e) {
+    console.log(`Flow Handler error (${payload.action}):`, e.message);
+  }
+}
+
+function sendSuccess(res, aesKey, iv) {
+  return send(res, aesKey, iv, {
+    version: '7.0',
+    screen: 'Success_Screen',
+    data: {}
+  });
+}
 
 function send(res, aesKey, iv, data) {
   const enc = crypto.createCipheriv('aes-128-gcm', aesKey, iv);
@@ -229,4 +217,4 @@ function send(res, aesKey, iv, data) {
   res.send(result.toString('base64'));
 }
 
-app.listen(3000, () => console.log('Server running'));
+app.listen(3000, () => console.log('WhatsApp Flow Server running on port 3000'));
