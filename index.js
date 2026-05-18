@@ -37,7 +37,7 @@ app.post('/webhook', async (req, res) => {
     const plain = JSON.parse(decipher.update(body, undefined, 'utf8') + decipher.final('utf8'));
     const flippedIv = Buffer.from(iv.map(b => ~b));
 
-    console.log('📥 Action:', plain.action, '| Screen:', plain.screen, '| Trade Type:', plain.data?.trade_type);
+    console.log('📥 Action:', plain.action, '| Screen:', plain.screen, '| Type:', plain.data?.trade_type);
 
     // ================= PING & INIT =================
     if (plain.action === 'ping') {
@@ -73,67 +73,47 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
-      // === LINKED TRADE ===
-      if (trade_type === 'linked_trade') {
-        let active_trades = [{ id: 'none', title: 'No active trades found' }];
+      // === ALL THREE SCREENS NOW USE THE SAME WORKING ENDPOINT ===
+      if (['linked_trade', 'addendum', 'modification'].includes(trade_type)) {
+        let trades = [{ id: 'none', title: 'No trades found' }];
 
         try {
           const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'get_active_trades' })
+            body: JSON.stringify({ action: 'get_active_trades' })   // ← Unified
           });
 
           const text = await response.text();
-          console.log('🔄 get_active_trades response:', text);
+          console.log(`🔄 get_active_trades response for ${trade_type}:`, text);
 
           if (text && text !== 'Accepted') {
             const data = JSON.parse(text);
             if (data.active_trades?.length > 0) {
-              active_trades = data.active_trades;
+              trades = data.active_trades;
+            } else if (data.approved_trades?.length > 0) {
+              trades = data.approved_trades;   // fallback in case
             }
           }
         } catch (e) {
-          console.error('Failed to fetch active trades:', e.message);
+          console.error('Failed to fetch trades:', e.message);
+        }
+
+        let screenName;
+        let dataPayload = {};
+
+        if (trade_type === 'linked_trade') {
+          screenName = 'Linked_Trade_Screen';
+          dataPayload = { direction, active_trades: trades };
+        } else {
+          screenName = trade_type === 'addendum' ? 'Addendum_Screen' : 'Modification_Screen';
+          dataPayload = { approved_trades: trades };
         }
 
         return send(res, aesKey, flippedIv, {
           version: '7.0',
-          screen: 'Linked_Trade_Screen',
-          data: { direction, active_trades }
-        });
-      }
-
-      // === ADDENDUM & MODIFICATION ===
-      if (trade_type === 'addendum' || trade_type === 'modification') {
-        let approved_trades = [{ id: 'none', title: 'No approved trades found' }];
-
-        try {
-          const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'get_approved_trades' })
-          });
-
-          const text = await response.text();
-          console.log(`🔄 get_approved_trades response (${trade_type}):`, text);
-
-          if (text && text !== 'Accepted') {
-            const data = JSON.parse(text);
-            if (data.approved_trades?.length > 0) {
-              approved_trades = data.approved_trades;
-            }
-          }
-        } catch (e) {
-          console.error(`Failed to fetch approved trades:`, e.message);
-        }
-
-        const screen = trade_type === 'addendum' ? 'Addendum_Screen' : 'Modification_Screen';
-
-        return send(res, aesKey, flippedIv, {
-          version: '7.0',
-          screen: screen,
-          data: { approved_trades }
+          screen: screenName,
+          data: dataPayload
         });
       }
     }
@@ -170,7 +150,7 @@ function fireAndForget(plain) {
     body: JSON.stringify(payload)
   })
   .then(r => r.text())
-  .then(text => console.log(`✅ Background ${payload.action} sent:`, text))
+  .then(text => console.log(`✅ Background ${payload.action}:`, text))
   .catch(e => console.error('Background error:', e.message));
 }
 
