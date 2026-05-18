@@ -37,7 +37,7 @@ app.post('/webhook', async (req, res) => {
     const plain = JSON.parse(decipher.update(body, undefined, 'utf8') + decipher.final('utf8'));
     const flippedIv = Buffer.from(iv.map(b => ~b));
 
-    console.log('Action:', plain.action, 'Screen:', plain.screen, 'Type:', plain.data?.trade_type);
+    console.log('[FLOW] Action:', plain.action, 'Screen:', plain.screen, 'Type:', plain.data?.trade_type);
 
     // PING & INIT
     if (plain.action === 'ping') {
@@ -66,54 +66,45 @@ app.post('/webhook', async (req, res) => {
       const direction = plain.data?.direction;
 
       if (trade_type === 'new_trade') {
-        return send(res, aesKey, flippedIv, {
-          version: '7.0',
-          screen: 'New_Trade_Screen',
-          data: { direction }
-        });
+        return send(res, aesKey, flippedIv, { version: '7.0', screen: 'New_Trade_Screen', data: { direction } });
       }
 
-      // === Linked Trade → Use get_active_trades ===
+      // Linked Trade (already working)
       if (trade_type === 'linked_trade') {
         let active_trades = [{ id: 'none', title: 'No active trades found' }];
-
         try {
-          const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
+          const r = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'get_active_trades' })
           });
-
-          const text = await response.text();
+          const text = await r.text();
           if (text && text !== 'Accepted') {
             const data = JSON.parse(text);
-            if (data.active_trades?.length > 0) {
-              active_trades = data.active_trades;
-            }
+            if (data.active_trades?.length > 0) active_trades = data.active_trades;
           }
         } catch (e) {
-          console.error('Failed to fetch active trades:', e.message);
+          console.error('get_active_trades failed:', e.message);
         }
-
-        return send(res, aesKey, flippedIv, {
-          version: '7.0',
-          screen: 'Linked_Trade_Screen',
-          data: { direction, active_trades }
-        });
+        return send(res, aesKey, flippedIv, { version: '7.0', screen: 'Linked_Trade_Screen', data: { direction, active_trades } });
       }
 
-      // === Addendum & Modification → Use get_approved_trades ===
+      // Addendum & Modification
       if (trade_type === 'addendum' || trade_type === 'modification') {
         let approved_trades = [{ id: 'none', title: 'No approved trades found' }];
 
         try {
+          console.log(`[FLOW] Fetching approved trades for ${trade_type}`);
           const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'get_approved_trades' })
+            body: JSON.stringify({ action: 'get_approved_trades' }),
+            signal: AbortSignal.timeout(10000)
           });
 
           const text = await response.text();
+          console.log(`[FLOW] get_approved_trades response:`, text);
+
           if (text && text !== 'Accepted') {
             const data = JSON.parse(text);
             if (data.approved_trades?.length > 0) {
@@ -121,7 +112,8 @@ app.post('/webhook', async (req, res) => {
             }
           }
         } catch (e) {
-          console.error('Failed to fetch approved trades:', e.message);
+          console.error(`[FLOW] get_approved_trades FAILED:`, e.message);
+          approved_trades = [{ id: 'none', title: 'Error loading trades. Please try again later.' }];
         }
 
         const screen = trade_type === 'addendum' ? 'Addendum_Screen' : 'Modification_Screen';
@@ -134,23 +126,22 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
-    // ================= SUBMISSIONS - Fire & Forget =================
+    // ================= SUBMISSIONS =================
     fireAndForget(plain);
     return sendSuccess(res, aesKey, flippedIv);
 
   } catch (err) {
-    console.error('Server error:', err);
+    console.error('Critical Server Error:', err);
     res.status(500).send('error');
   }
 });
 
-// ====================== HELPERS ======================
+// Helpers
 function fireAndForget(plain) {
   const payload = {
     action: plain.screen === 'New_Trade_Screen' ? 'new_trade' :
             plain.screen === 'Linked_Trade_Screen' ? 'linked_trade' :
             plain.screen === 'Addendum_Screen' ? 'addendum' : 'modification',
-
     direction: plain.data?.direction,
     trade_text: plain.data?.trade_text,
     parent_trade: plain.data?.parent_trade,
