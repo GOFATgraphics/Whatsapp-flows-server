@@ -14,24 +14,11 @@ app.post('/webhook', async (req, res) => {
     const encData = Buffer.from(req.body.encrypted_flow_data, 'base64');
     const iv = Buffer.from(req.body.initial_vector, 'base64');
 
-    const privateKeyPem = Buffer.from(PRIVATE_KEY_B64, 'base64')
-      .toString('utf8')
-      .trim();
+    const privateKeyPem = Buffer.from(PRIVATE_KEY_B64, 'base64').toString('utf8').trim();
 
-    const privateKey = crypto.createPrivateKey({
-      key: privateKeyPem,
-      format: 'pem',
-      type: 'pkcs8',
-    });
+    const privateKey = crypto.createPrivateKey({ key: privateKeyPem, format: 'pem', type: 'pkcs8' });
 
-    const aesKey = crypto.privateDecrypt(
-      {
-        key: privateKey,
-        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-        oaepHash: 'sha256',
-      },
-      encAesKey
-    );
+    const aesKey = crypto.privateDecrypt({ key: privateKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, encAesKey);
 
     const tag = encData.subarray(-16);
     const body = encData.subarray(0, -16);
@@ -39,15 +26,12 @@ app.post('/webhook', async (req, res) => {
     const decipher = crypto.createDecipheriv('aes-128-gcm', aesKey, iv);
     decipher.setAuthTag(tag);
 
-    const plain = JSON.parse(
-      decipher.update(body, undefined, 'utf8') + decipher.final('utf8')
-    );
-
+    const plain = JSON.parse(decipher.update(body, undefined, 'utf8') + decipher.final('utf8'));
     const flippedIv = Buffer.from(iv.map(b => ~b));
 
     console.log('Action:', plain.action, 'Screen:', plain.screen);
 
-    // ================= PING & INIT =================
+    // PING & INIT
     if (plain.action === 'ping') {
       return send(res, aesKey, flippedIv, { version: '7.0', data: { status: 'active' } });
     }
@@ -68,7 +52,7 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
-    // ================= TRADE DETAILS =================
+    // ================= TRADE DETAILS SCREEN =================
     if (plain.screen === 'Trade_Details') {
       const trade_type = plain.data?.trade_type;
       const direction = plain.data?.direction;
@@ -77,95 +61,55 @@ app.post('/webhook', async (req, res) => {
         return send(res, aesKey, flippedIv, { version: '7.0', screen: 'New_Trade_Screen', data: { direction } });
       }
 
-      if (trade_type === 'linked_trade') {
-        let active_trades = [{ id: 'none', title: 'No active trades found' }];
+      // For screens that need trade list
+      if (['linked_trade', 'addendum', 'modification'].includes(trade_type)) {
+        let trades = [{ id: 'none', title: 'No trades found' }];
 
         try {
           const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'get_approved_trades' })
+            body: JSON.stringify({ action: 'get_approved_trades' }),
+            signal: AbortSignal.timeout(8000)   // 8 second timeout
           });
+
           const text = await response.text();
           if (text && text !== 'Accepted') {
             const data = JSON.parse(text);
-            if (data.approved_trades?.length > 0) active_trades = data.approved_trades;
+            if (data.approved_trades?.length > 0) {
+              trades = data.approved_trades;
+            }
           }
-        } catch (e) { console.log('Error fetching trades:', e.message); }
+        } catch (e) {
+          console.error('Failed to fetch trades:', e.message);
+          // Fallback list so flow doesn't break
+          trades = [{ id: 'none', title: 'Error loading trades - Please try again' }];
+        }
 
-        return send(res, aesKey, flippedIv, {
-          version: '7.0',
-          screen: 'Linked_Trade_Screen',
-          data: { direction, active_trades }
-        });
-      }
+        let screenName = 'Addendum_Screen';
+        let dataPayload = { approved_trades: trades };
 
-      if (trade_type === 'addendum' || trade_type === 'modification') {
-        let approved_trades = [{ id: 'none', title: 'No approved trades found' }];
+        if (trade_type === 'linked_trade') {
+          screenName = 'Linked_Trade_Screen';
+          dataPayload = { direction, active_trades: trades };
+        } else if (trade_type === 'modification') {
+          screenName = 'Modification_Screen';
+        }
 
-        try {
-          const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'get_approved_trades' })
-          });
-          const text = await response.text();
-          if (text && text !== 'Accepted') {
-            const data = JSON.parse(text);
-            if (data.approved_trades?.length > 0) approved_trades = data.approved_trades;
-          }
-        } catch (e) { console.log('Error fetching trades:', e.message); }
-
-        const screen = trade_type === 'addendum' ? 'Addendum_Screen' : 'Modification_Screen';
-        return send(res, aesKey, flippedIv, { version: '7.0', screen, data: { approved_trades } });
+        return send(res, aesKey, flippedIv, { version: '7.0', screen: screenName, data: dataPayload });
       }
     }
 
-    // ================= SUBMISSIONS - IMMEDIATE SUCCESS =================
+    // ================= SUBMIT SCREENS (Fire and Forget) =================
     const screen = plain.screen;
 
-    if (screen === 'New_Trade_Screen') {
-      fireAndForget({
-        action: 'new_trade',
-        direction: plain.data?.direction,
-        trade_text: plain.data?.trade_text,
-        from: plain.flow_token
-      });
+    if (screen === 'New_Trade_Screen' || screen === 'Linked_Trade_Screen' || 
+        screen === 'Addendum_Screen' || screen === 'Modification_Screen') {
+      
+      fireAndForget(plain);
       return sendSuccess(res, aesKey, flippedIv);
     }
 
-    if (screen === 'Linked_Trade_Screen') {
-      fireAndForget({
-        action: 'linked_trade',
-        direction: plain.data?.direction,
-        parent_trade: plain.data?.parent_trade,
-        trade_text: plain.data?.trade_text,
-        from: plain.flow_token
-      });
-      return sendSuccess(res, aesKey, flippedIv);
-    }
-
-    if (screen === 'Addendum_Screen') {
-      fireAndForget({
-        action: 'addendum',
-        selected_trade: plain.data?.selected_trade,
-        addendum_text: plain.data?.addendum_text,
-        from: plain.flow_token
-      });
-      return sendSuccess(res, aesKey, flippedIv);
-    }
-
-    if (screen === 'Modification_Screen') {
-      fireAndForget({
-        action: 'modification',
-        selected_trade: plain.data?.selected_trade,
-        modification_text: plain.data?.modification_text,
-        from: plain.flow_token
-      });
-      return sendSuccess(res, aesKey, flippedIv);
-    }
-
-    // Fallback
     return sendSuccess(res, aesKey, flippedIv);
 
   } catch (err) {
@@ -175,33 +119,34 @@ app.post('/webhook', async (req, res) => {
 });
 
 // ====================== HELPERS ======================
-function fireAndForget(payload) {
-  // Fire the request in background without waiting
+function fireAndForget(plain) {
+  const payload = {
+    action: plain.screen === 'New_Trade_Screen' ? 'new_trade' :
+            plain.screen === 'Linked_Trade_Screen' ? 'linked_trade' :
+            plain.screen === 'Addendum_Screen' ? 'addendum' : 'modification',
+    direction: plain.data?.direction,
+    trade_text: plain.data?.trade_text,
+    parent_trade: plain.data?.parent_trade,
+    selected_trade: plain.data?.selected_trade,
+    addendum_text: plain.data?.addendum_text,
+    modification_text: plain.data?.modification_text,
+    from: plain.flow_token
+  };
+
   fetch(FLOW_HANDLER_WEBHOOK_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
-  })
-  .then(res => res.text())
-  .then(text => console.log(`Background ${payload.action} response:`, text))
-  .catch(e => console.log(`Background error (${payload.action}):`, e.message));
+  }).catch(e => console.log('Background error:', e.message));
 }
 
 function sendSuccess(res, aesKey, iv) {
-  return send(res, aesKey, iv, {
-    version: '7.0',
-    screen: 'Success_Screen',
-    data: {}
-  });
+  return send(res, aesKey, iv, { version: '7.0', screen: 'Success_Screen', data: {} });
 }
 
 function send(res, aesKey, iv, data) {
   const enc = crypto.createCipheriv('aes-128-gcm', aesKey, iv);
-  const result = Buffer.concat([
-    enc.update(JSON.stringify(data), 'utf8'),
-    enc.final(),
-    enc.getAuthTag()
-  ]);
+  const result = Buffer.concat([enc.update(JSON.stringify(data), 'utf8'), enc.final(), enc.getAuthTag()]);
   res.send(result.toString('base64'));
 }
 
