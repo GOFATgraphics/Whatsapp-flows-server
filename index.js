@@ -89,10 +89,33 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (trade_type === 'linked_trade') {
+        let active_trades = [{ id: 'none', title: 'No active trades found' }];
+
+        try {
+          const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'get_approved_trades' })
+          });
+
+          const text = await response.text();
+          if (text && text !== 'Accepted') {
+            const data = JSON.parse(text);
+            if (data.approved_trades?.length > 0) {
+              active_trades = data.approved_trades;
+            }
+          }
+        } catch (e) {
+          console.log('Error fetching trades for Linked Trade:', e.message);
+        }
+
         return send(res, aesKey, flippedIv, {
           version: '7.0',
           screen: 'Linked_Trade_Screen',
-          data: { direction }
+          data: {
+            direction: direction,
+            active_trades: active_trades
+          }
         });
       }
 
@@ -134,7 +157,6 @@ app.post('/webhook', async (req, res) => {
         trade_text: plain.data?.trade_text,
         from: plain.flow_token
       });
-
       return sendSuccess(res, aesKey, flippedIv);
     }
 
@@ -143,11 +165,10 @@ app.post('/webhook', async (req, res) => {
       await forwardToHandler({
         action: 'linked_trade',
         direction: plain.data?.direction,
-        parent_trade: plain.data?.parent_trade,        // Fixed
+        parent_trade: plain.data?.parent_trade,
         trade_text: plain.data?.trade_text,
         from: plain.flow_token
       });
-
       return sendSuccess(res, aesKey, flippedIv);
     }
 
@@ -159,7 +180,6 @@ app.post('/webhook', async (req, res) => {
         addendum_text: plain.data?.addendum_text,
         from: plain.flow_token
       });
-
       return sendSuccess(res, aesKey, flippedIv);
     }
 
@@ -171,7 +191,6 @@ app.post('/webhook', async (req, res) => {
         modification_text: plain.data?.modification_text,
         from: plain.flow_token
       });
-
       return sendSuccess(res, aesKey, flippedIv);
     }
 
@@ -184,7 +203,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Helper Functions
+// ====================== HELPERS ======================
 async function forwardToHandler(payload) {
   try {
     const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
