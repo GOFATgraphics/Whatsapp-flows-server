@@ -8,6 +8,7 @@ const PRIVATE_KEY_B64 = process.env.PRIVATE_KEY_B64;
 const FLOW_HANDLER_WEBHOOK_URL = process.env.FLOW_HANDLER_WEBHOOK_URL;
 
 // ====================== COMMODITY LIST ======================
+
 const COMMODITY_OPTIONS = [
   { id: 'basmati_rice_1718', title: 'Basmati Rice - 1718' },
   { id: 'brazilian_raw_sugar', title: 'Brazilian Raw Sugar' },
@@ -31,18 +32,9 @@ const COMMODITY_OPTIONS = [
   { id: 'pigeon_peas_babati', title: 'Babati Pigeon Peas - Tanzania' },
   { id: 'pigeon_peas_bariadi', title: 'Bariadi Pigeon Peas - Tanzania' },
   { id: 'pigeon_peas_dodoma', title: 'Dodoma Pigeon Peas - Tanzania' },
-  {
-    id: 'pigeon_peas_lakota',
-    title: 'Lakota/Red Pigeon Peas - Mozambique/Malawi'
-  },
-  {
-    id: 'pigeon_peas_matwara_moz',
-    title: 'Matwara Pigeon Peas - Mozambique/Malawi'
-  },
-  {
-    id: 'pigeon_peas_matwara_tz',
-    title: 'Matwara Pigeon Peas - Tanzania'
-  },
+  { id: 'pigeon_peas_lakota', title: 'Lakota/Red Pigeon Peas - Mozambique/Malawi' },
+  { id: 'pigeon_peas_matwara_moz', title: 'Matwara Pigeon Peas - Mozambique/Malawi' },
+  { id: 'pigeon_peas_matwara_tz', title: 'Matwara Pigeon Peas - Tanzania' },
   { id: 'rapeseed_meal_india', title: 'Rapeseed Meal - India' },
   { id: 'rcn', title: 'RCN' },
   { id: 'rcn_tanzania', title: 'RCN - Tanzania' },
@@ -68,15 +60,20 @@ const COMMODITY_OPTIONS = [
   { id: 'yellow_maize_india', title: 'Yellow Maize - India' },
   { id: 'yellow_peas_canada', title: 'Yellow Peas - Canada' },
   { id: 'yellow_peas_ukraine', title: 'Yellow Peas - Ukraine' },
-  {
-    id: 'yellow_peas_ukraine_russia',
-    title: 'Yellow Peas - Ukraine/Russia'
-  }
+  { id: 'yellow_peas_ukraine_russia', title: 'Yellow Peas - Ukraine/Russia' }
 ];
+
+// ====================== COMMODITY LOOKUP ======================
+
+function getCommodityTitle(id) {
+  const match = COMMODITY_OPTIONS.find((c) => c.id === id);
+  return match ? match.title : id;
+}
 
 app.post('/webhook', async (req, res) => {
   try {
     // ================= DECRYPT =================
+
     const encAesKey = Buffer.from(
       req.body.encrypted_aes_key,
       'base64'
@@ -127,7 +124,7 @@ app.post('/webhook', async (req, res) => {
 
     const plain = JSON.parse(
       decipher.update(body, undefined, 'utf8') +
-        decipher.final('utf8')
+      decipher.final('utf8')
     );
 
     const flippedIv = Buffer.from(
@@ -146,6 +143,7 @@ app.post('/webhook', async (req, res) => {
     );
 
     // ================= PING & INIT =================
+
     if (plain.action === 'ping') {
       return send(res, aesKey, flippedIv, {
         version: '7.0',
@@ -176,10 +174,12 @@ app.post('/webhook', async (req, res) => {
     }
 
     // ================= TRADE DETAILS SCREEN =================
+
     if (plain.screen === 'Trade_Details') {
       const trade_type = plain.data?.trade_type;
       const direction = plain.data?.direction;
       const commodity = plain.data?.commodity || '';
+      const commodityTitle = getCommodityTitle(commodity);
 
       if (trade_type === 'new_trade') {
         return send(res, aesKey, flippedIv, {
@@ -187,7 +187,7 @@ app.post('/webhook', async (req, res) => {
           screen: 'New_Trade_Screen',
           data: {
             direction,
-            commodity
+            commodity: commodityTitle
           }
         });
       }
@@ -215,7 +215,7 @@ app.post('/webhook', async (req, res) => {
               body: JSON.stringify({
                 action: 'get_active_trades',
                 direction,
-                commodity,
+                commodity: commodityTitle,
                 trade_type
               })
             }
@@ -224,7 +224,7 @@ app.post('/webhook', async (req, res) => {
           const text = await response.text();
 
           console.log(
-            `🔄 get_active_trades response for ${trade_type} (commodity: ${commodity}):`,
+            `🔄 get_active_trades response for ${trade_type} (commodity: ${commodityTitle}):`,
             text
           );
 
@@ -233,9 +233,7 @@ app.post('/webhook', async (req, res) => {
 
             if (data.active_trades?.length > 0) {
               trades = data.active_trades;
-            } else if (
-              data.approved_trades?.length > 0
-            ) {
+            } else if (data.approved_trades?.length > 0) {
               trades = data.approved_trades;
             }
           }
@@ -254,7 +252,7 @@ app.post('/webhook', async (req, res) => {
 
           dataPayload = {
             direction,
-            commodity,
+            commodity: commodityTitle,
             active_trades: trades
           };
         } else {
@@ -264,7 +262,7 @@ app.post('/webhook', async (req, res) => {
               : 'Modification_Screen';
 
           dataPayload = {
-            commodity,
+            commodity: commodityTitle,
             approved_trades: trades
           };
         }
@@ -278,6 +276,7 @@ app.post('/webhook', async (req, res) => {
     }
 
     // ================= SUBMISSIONS =================
+
     fireAndForget(plain);
 
     return sendSuccess(
@@ -292,6 +291,7 @@ app.post('/webhook', async (req, res) => {
 });
 
 // ====================== HELPERS ======================
+
 function fireAndForget(plain) {
   const payload = {
     action:
@@ -304,12 +304,15 @@ function fireAndForget(plain) {
         : 'modification',
 
     direction: plain.data?.direction,
-    commodity: plain.data?.commodity,
+    commodity: getCommodityTitle(
+      plain.data?.commodity
+    ),
     trade_text: plain.data?.trade_text,
     parent_trade: plain.data?.parent_trade,
     selected_trade: plain.data?.selected_trade,
     addendum_text: plain.data?.addendum_text,
-    modification_text: plain.data?.modification_text,
+    modification_text:
+      plain.data?.modification_text,
     from: plain.flow_token
   };
 
@@ -359,7 +362,9 @@ function send(res, aesKey, iv, data) {
     enc.getAuthTag()
   ]);
 
-  res.send(result.toString('base64'));
+  res.send(
+    result.toString('base64')
+  );
 }
 
 app.listen(3000, () => {
