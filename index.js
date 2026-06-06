@@ -9,26 +9,95 @@ const FLOW_HANDLER_WEBHOOK_URL = process.env.FLOW_HANDLER_WEBHOOK_URL;
 
 // ====================== COMMODITY LIST ======================
 const COMMODITY_OPTIONS = [
-  { id: 'cashew', title: 'Cashew' },
-  { id: 'rice', title: 'Rice' },
-  { id: 'sugar', title: 'Sugar' },
-  { id: 'wheat_corn_wheatbran_barley', title: 'Wheat / Corn / Wheat Bran / Barley' },
-  { id: 'soyabean_sesame_mustard_rapeseed_soyameal', title: 'Soyabean / Sesame / Mustard / Rapeseed / Soya Meal' },
-  { id: 'oils', title: 'Oils' },
-  { id: 'pulses', title: 'Pulses' }
+  { id: 'basmati_rice_1718', title: 'Basmati Rice - 1718' },
+  { id: 'brazilian_raw_sugar', title: 'Brazilian Raw Sugar' },
+  { id: 'chick_peas_australia', title: 'Chick Peas - Australia' },
+  { id: 'chick_peas_tanzania', title: 'Chick Peas - Tanzania' },
+  { id: 'crimsons_canada', title: 'Crimsons - Canada' },
+  { id: 'green_peas_canada', title: 'Green Peas - Canada' },
+  { id: 'indian_sella_rice_1509', title: 'Indian Sella Rice - 1509' },
+  { id: 'indian_white_rice_broken', title: 'Indian White Rice - 100% Broken' },
+  { id: 'indian_white_sugar', title: 'Indian White Sugar' },
+  { id: 'laird_canada', title: 'Laird - Canada' },
+  { id: 'mix_sesame_tanzania', title: 'Mix Sesame Seed - Tanzania' },
+  { id: 'mus_seed_russia', title: 'Mus. Seed - Russia' },
+  { id: 'nipper_australia', title: 'Nipper - Australia' },
+  { id: 'palm_olein_10_big', title: 'Palm Olein - 10 Ltr. Big mouth' },
+  { id: 'palm_olein_10_small', title: 'Palm Olein - 10 Ltr. Small mouth' },
+  { id: 'palm_olein_16_big', title: 'Palm Olein - 16 Ltr. Big mouth' },
+  { id: 'palm_olein_16_tin', title: 'Palm Olein - 16 Ltr. Tin' },
+  { id: 'parboiled_rice', title: 'Parboiled Rice' },
+  { id: 'pigeon_peas_arusha', title: 'Arusha Pigeon Peas - Tanzania' },
+  { id: 'pigeon_peas_babati', title: 'Babati Pigeon Peas - Tanzania' },
+  { id: 'pigeon_peas_bariadi', title: 'Bariadi Pigeon Peas - Tanzania' },
+  { id: 'pigeon_peas_dodoma', title: 'Dodoma Pigeon Peas - Tanzania' },
+  {
+    id: 'pigeon_peas_lakota',
+    title: 'Lakota/Red Pigeon Peas - Mozambique/Malawi'
+  },
+  {
+    id: 'pigeon_peas_matwara_moz',
+    title: 'Matwara Pigeon Peas - Mozambique/Malawi'
+  },
+  {
+    id: 'pigeon_peas_matwara_tz',
+    title: 'Matwara Pigeon Peas - Tanzania'
+  },
+  { id: 'rapeseed_meal_india', title: 'Rapeseed Meal - India' },
+  { id: 'rcn', title: 'RCN' },
+  { id: 'rcn_tanzania', title: 'RCN - Tanzania' },
+  { id: 'red_lentil_canada', title: 'Red Lentil - Canada' },
+  { id: 'renuka_sugar_45', title: 'Renuka Sugar - 45 Icumsa' },
+  { id: 'sesame_seed_mozambique', title: 'Sesame Seed - Mozambique' },
+  { id: 'sesame_seed_tanzania', title: 'Sesame Seed - Tanzania' },
+  { id: 'shridutt_sugar_45', title: 'Shridutt Sugar - 45 Icumsa' },
+  { id: 'soyabean_meal_india', title: 'Soyabean Meal - India' },
+  { id: 'soyabean_nigeria', title: 'Soyabean - Nigeria' },
+  { id: 'soyabean_ukraine', title: 'Soyabean - Ukraine' },
+  { id: 'sugar_150_icumsa', title: 'White Sugar - 150 Icumsa' },
+  { id: 'sugar_alkhaleej_coarse', title: 'Al Khaleej Sugar - Coarse' },
+  { id: 'sugar_alkhaleej_fine', title: 'Al Khaleej Sugar - Fine' },
+  { id: 'sugar_manjeet_100', title: 'Manjeet - 100 Icumsa' },
+  { id: 'sugar_manjeet_150', title: 'Manjeet - 150 Icumsa' },
+  { id: 'wheat_apw1', title: 'Wheat - APW1' },
+  { id: 'wheat_bran_angola', title: 'Wheat Bran - Angola' },
+  { id: 'wheat_bran_tanzania', title: 'Wheat Bran - Tanzania' },
+  { id: 'white_sesame_nigeria', title: 'White Sesame Seed - Nigeria' },
+  { id: 'white_sesame_tanzania', title: 'White Sesame Seed - Tanzania' },
+  { id: 'white_sugar', title: 'White Sugar' },
+  { id: 'yellow_maize_india', title: 'Yellow Maize - India' },
+  { id: 'yellow_peas_canada', title: 'Yellow Peas - Canada' },
+  { id: 'yellow_peas_ukraine', title: 'Yellow Peas - Ukraine' },
+  {
+    id: 'yellow_peas_ukraine_russia',
+    title: 'Yellow Peas - Ukraine/Russia'
+  }
 ];
 
 app.post('/webhook', async (req, res) => {
   try {
     // ================= DECRYPT =================
-    const encAesKey = Buffer.from(req.body.encrypted_aes_key, 'base64');
-    const encData = Buffer.from(req.body.encrypted_flow_data, 'base64');
-    const iv = Buffer.from(req.body.initial_vector, 'base64');
+    const encAesKey = Buffer.from(
+      req.body.encrypted_aes_key,
+      'base64'
+    );
+
+    const encData = Buffer.from(
+      req.body.encrypted_flow_data,
+      'base64'
+    );
+
+    const iv = Buffer.from(
+      req.body.initial_vector,
+      'base64'
+    );
 
     const privateKeyPem = Buffer.from(
       PRIVATE_KEY_B64,
       'base64'
-    ).toString('utf8').trim();
+    )
+      .toString('utf8')
+      .trim();
 
     const privateKey = crypto.createPrivateKey({
       key: privateKeyPem,
@@ -48,15 +117,22 @@ app.post('/webhook', async (req, res) => {
     const tag = encData.subarray(-16);
     const body = encData.subarray(0, -16);
 
-    const decipher = crypto.createDecipheriv('aes-128-gcm', aesKey, iv);
+    const decipher = crypto.createDecipheriv(
+      'aes-128-gcm',
+      aesKey,
+      iv
+    );
+
     decipher.setAuthTag(tag);
 
     const plain = JSON.parse(
       decipher.update(body, undefined, 'utf8') +
-      decipher.final('utf8')
+        decipher.final('utf8')
     );
 
-    const flippedIv = Buffer.from(iv.map(b => ~b));
+    const flippedIv = Buffer.from(
+      iv.map((b) => ~b)
+    );
 
     console.log(
       '📥 Action:',
@@ -73,7 +149,9 @@ app.post('/webhook', async (req, res) => {
     if (plain.action === 'ping') {
       return send(res, aesKey, flippedIv, {
         version: '7.0',
-        data: { status: 'active' }
+        data: {
+          status: 'active'
+        }
       });
     }
 
@@ -115,23 +193,33 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (
-        ['linked_trade', 'addendum', 'modification'].includes(trade_type)
+        ['linked_trade', 'addendum', 'modification'].includes(
+          trade_type
+        )
       ) {
-        let trades = [{ id: 'none', title: 'No trades found' }];
+        let trades = [
+          {
+            id: 'none',
+            title: 'No trades found'
+          }
+        ];
 
         try {
-          const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              action: 'get_active_trades',
-              direction,
-              commodity,
-              trade_type
-            })
-          });
+          const response = await fetch(
+            FLOW_HANDLER_WEBHOOK_URL,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                action: 'get_active_trades',
+                direction,
+                commodity,
+                trade_type
+              })
+            }
+          );
 
           const text = await response.text();
 
@@ -145,12 +233,17 @@ app.post('/webhook', async (req, res) => {
 
             if (data.active_trades?.length > 0) {
               trades = data.active_trades;
-            } else if (data.approved_trades?.length > 0) {
+            } else if (
+              data.approved_trades?.length > 0
+            ) {
               trades = data.approved_trades;
             }
           }
         } catch (e) {
-          console.error('Failed to fetch trades:', e.message);
+          console.error(
+            'Failed to fetch trades:',
+            e.message
+          );
         }
 
         let screenName;
@@ -158,6 +251,7 @@ app.post('/webhook', async (req, res) => {
 
         if (trade_type === 'linked_trade') {
           screenName = 'Linked_Trade_Screen';
+
           dataPayload = {
             direction,
             commodity,
@@ -185,8 +279,12 @@ app.post('/webhook', async (req, res) => {
 
     // ================= SUBMISSIONS =================
     fireAndForget(plain);
-    return sendSuccess(res, aesKey, flippedIv);
 
+    return sendSuccess(
+      res,
+      aesKey,
+      flippedIv
+    );
   } catch (err) {
     console.error('Server error:', err);
     res.status(500).send('error');
@@ -194,7 +292,6 @@ app.post('/webhook', async (req, res) => {
 });
 
 // ====================== HELPERS ======================
-
 function fireAndForget(plain) {
   const payload = {
     action:
@@ -223,12 +320,18 @@ function fireAndForget(plain) {
     },
     body: JSON.stringify(payload)
   })
-    .then(r => r.text())
-    .then(text =>
-      console.log(`✅ Background ${payload.action}:`, text)
+    .then((r) => r.text())
+    .then((text) =>
+      console.log(
+        `✅ Background ${payload.action}:`,
+        text
+      )
     )
-    .catch(e =>
-      console.error('Background error:', e.message)
+    .catch((e) =>
+      console.error(
+        'Background error:',
+        e.message
+      )
     );
 }
 
@@ -248,7 +351,10 @@ function send(res, aesKey, iv, data) {
   );
 
   const result = Buffer.concat([
-    enc.update(JSON.stringify(data), 'utf8'),
+    enc.update(
+      JSON.stringify(data),
+      'utf8'
+    ),
     enc.final(),
     enc.getAuthTag()
   ]);
@@ -257,5 +363,7 @@ function send(res, aesKey, iv, data) {
 }
 
 app.listen(3000, () => {
-  console.log('WhatsApp Flow Server running on port 3000');
+  console.log(
+    'WhatsApp Flow Server running on port 3000'
+  );
 });
