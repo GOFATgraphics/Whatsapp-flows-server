@@ -10,57 +10,49 @@ const FLOW_HANDLER_WEBHOOK_URL = process.env.FLOW_HANDLER_WEBHOOK_URL;
 // ====================== COMMODITY LIST ======================
 
 const COMMODITY_OPTIONS = [
-  { id: 'basmati_rice_1718', title: 'Basmati Rice - 1718' },
+  { id: 'rcn', title: 'RCN' },
+  { id: 'basmati_rice', title: 'Basmati Rice' },
+  { id: 'parboiled_rice', title: 'Parboiled Rice' },
+  { id: 'indian_white_rice', title: 'Indian White Rice' },
+  { id: 'indian_sella_rice', title: 'Indian Sella Rice' },
+  { id: 'alkhaleej_sugar_fine', title: 'Al Khaleej Sugar - Fine' },
+  { id: 'alkhaleej_sugar_coarse', title: 'Al Khaleej Sugar - Coarse' },
+  { id: 'manjeet_100_icumsa', title: 'Manjeet - 100 Icumsa' },
+  { id: 'manjeet_150_icumsa', title: 'Manjeet - 150 Icumsa' },
+  { id: 'white_sugar_150_icumsa', title: 'White Sugar - 150 Icumsa' },
+  { id: 'shridutt_sugar_45', title: 'Shridutt Sugar - 45 Icumsa' },
+  { id: 'renuka_sugar_45', title: 'Renuka Sugar - 45 Icumsa' },
   { id: 'brazilian_raw_sugar', title: 'Brazilian Raw Sugar' },
-  { id: 'chick_peas_australia', title: 'Chick Peas - Australia' },
-  { id: 'chick_peas_tanzania', title: 'Chick Peas - Tanzania' },
-  { id: 'crimsons_canada', title: 'Crimsons - Canada' },
-  { id: 'green_peas_canada', title: 'Green Peas - Canada' },
-  { id: 'indian_sella_rice_1509', title: 'Indian Sella Rice - 1509' },
-  { id: 'indian_white_rice_broken', title: 'Indian White Rice - 100% Broken' },
+  { id: 'white_sugar', title: 'White Sugar' },
   { id: 'indian_white_sugar', title: 'Indian White Sugar' },
-  { id: 'laird_canada', title: 'Laird - Canada' },
-  { id: 'mix_sesame_tanzania', title: 'Mix Sesame Seed - Tanzania' },
-  { id: 'mus_seed_russia', title: 'Mus. Seed - Russia' },
-  { id: 'nipper_australia', title: 'Nipper - Australia' },
-  { id: 'palm_olein_10_big', title: 'Palm Olein - 10 Ltr. Big mouth' },
+  { id: 'wheat', title: 'Wheat' },
+  { id: 'yellow_maize', title: 'Yellow Maize' },
+  { id: 'wheat_bran', title: 'Wheat Bran' },
+  { id: 'soyabean', title: 'Soyabean' },
+  { id: 'mustard_seed', title: 'Mustard Seed' },
+  { id: 'soyabean_meal', title: 'Soyabean Meal' },
+  { id: 'rapeseed_meal', title: 'Rapeseed Meal' },
+  { id: 'sesame_seed', title: 'Sesame Seed' },
+  { id: 'white_sesame_seed', title: 'White Sesame Seed' },
+  { id: 'mix_sesame_seed', title: 'Mix Sesame Seed' },
+  { id: 'south_sesame_seed', title: 'South Sesame Seed' },
   { id: 'palm_olein_10_small', title: 'Palm Olein - 10 Ltr. Small mouth' },
+  { id: 'palm_olein_10_big', title: 'Palm Olein - 10 Ltr. Big mouth' },
   { id: 'palm_olein_16_big', title: 'Palm Olein - 16 Ltr. Big mouth' },
   { id: 'palm_olein_16_tin', title: 'Palm Olein - 16 Ltr. Tin' },
-  { id: 'parboiled_rice', title: 'Parboiled Rice' },
-  { id: 'pigeon_peas_arusha', title: 'Arusha Pigeon Peas - Tanzania' },
-  { id: 'pigeon_peas_babati', title: 'Babati Pigeon Peas - Tanzania' },
-  { id: 'pigeon_peas_bariadi', title: 'Bariadi Pigeon Peas - Tanzania' },
-  { id: 'pigeon_peas_dodoma', title: 'Dodoma Pigeon Peas - Tanzania' },
-  { id: 'pigeon_peas_lakota', title: 'Lakota/Red Pigeon Peas - Mozambique/Malawi' },
-  { id: 'pigeon_peas_matwara_moz', title: 'Matwara Pigeon Peas - Mozambique/Malawi' },
-  { id: 'pigeon_peas_matwara_tz', title: 'Matwara Pigeon Peas - Tanzania' },
-  { id: 'rapeseed_meal_india', title: 'Rapeseed Meal - India' },
-  { id: 'rcn', title: 'RCN' },
-  { id: 'rcn_tanzania', title: 'RCN - Tanzania' },
-  { id: 'red_lentil_canada', title: 'Red Lentil - Canada' },
-  { id: 'renuka_sugar_45', title: 'Renuka Sugar - 45 Icumsa' },
-  { id: 'sesame_seed_mozambique', title: 'Sesame Seed - Mozambique' },
-  { id: 'sesame_seed_tanzania', title: 'Sesame Seed - Tanzania' },
-  { id: 'shridutt_sugar_45', title: 'Shridutt Sugar - 45 Icumsa' },
-  { id: 'soyabean_meal_india', title: 'Soyabean Meal - India' },
-  { id: 'soyabean_nigeria', title: 'Soyabean - Nigeria' },
-  { id: 'soyabean_ukraine', title: 'Soyabean - Ukraine' },
-  { id: 'sugar_150_icumsa', title: 'White Sugar - 150 Icumsa' },
-  { id: 'sugar_alkhaleej_coarse', title: 'Al Khaleej Sugar - Coarse' },
-  { id: 'sugar_alkhaleej_fine', title: 'Al Khaleej Sugar - Fine' },
-  { id: 'sugar_manjeet_100', title: 'Manjeet - 100 Icumsa' },
-  { id: 'sugar_manjeet_150', title: 'Manjeet - 150 Icumsa' },
-  { id: 'wheat_apw1', title: 'Wheat - APW1' },
-  { id: 'wheat_bran_angola', title: 'Wheat Bran - Angola' },
-  { id: 'wheat_bran_tanzania', title: 'Wheat Bran - Tanzania' },
-  { id: 'white_sesame_nigeria', title: 'White Sesame Seed - Nigeria' },
-  { id: 'white_sesame_tanzania', title: 'White Sesame Seed - Tanzania' },
-  { id: 'white_sugar', title: 'White Sugar' },
-  { id: 'yellow_maize_india', title: 'Yellow Maize - India' },
-  { id: 'yellow_peas_canada', title: 'Yellow Peas - Canada' },
-  { id: 'yellow_peas_ukraine', title: 'Yellow Peas - Ukraine' },
-  { id: 'yellow_peas_ukraine_russia', title: 'Yellow Peas - Ukraine/Russia' }
+  { id: 'arusha_pigeon_peas', title: 'Arusha Pigeon Peas' },
+  { id: 'bariadi_pigeon_peas', title: 'Bariadi Pigeon Peas' },
+  { id: 'dodoma_pigeon_peas', title: 'Dodoma Pigeon Peas' },
+  { id: 'lakota_pigeon_peas', title: 'Lakota/Red Pigeon Peas' },
+  { id: 'matwara_pigeon_peas', title: 'Matwara Pigeon Peas' },
+  { id: 'babati_pigeon_peas', title: 'Babati Pigeon Peas' },
+  { id: 'yellow_peas', title: 'Yellow Peas' },
+  { id: 'chick_peas', title: 'Chick Peas' },
+  { id: 'nipper', title: 'Nipper' },
+  { id: 'crimsons', title: 'Crimsons' },
+  { id: 'red_lentil', title: 'Red Lentil' },
+  { id: 'laird', title: 'Laird' },
+  { id: 'green_peas', title: 'Green Peas' }
 ];
 
 // ====================== COMMODITY LOOKUP ======================
@@ -124,12 +116,10 @@ app.post('/webhook', async (req, res) => {
 
     const plain = JSON.parse(
       decipher.update(body, undefined, 'utf8') +
-      decipher.final('utf8')
+        decipher.final('utf8')
     );
 
-    const flippedIv = Buffer.from(
-      iv.map((b) => ~b)
-    );
+    const flippedIv = Buffer.from(iv.map((b) => ~b));
 
     console.log(
       '📥 Action:',
@@ -193,9 +183,8 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (
-        ['linked_trade', 'addendum', 'modification'].includes(
-          trade_type
-        )
+        ['linked_trade', 'addendum', 'modification']
+          .includes(trade_type)
       ) {
         let trades = [
           {
@@ -311,8 +300,7 @@ function fireAndForget(plain) {
     parent_trade: plain.data?.parent_trade,
     selected_trade: plain.data?.selected_trade,
     addendum_text: plain.data?.addendum_text,
-    modification_text:
-      plain.data?.modification_text,
+    modification_text: plain.data?.modification_text,
     from: plain.flow_token
   };
 
@@ -362,9 +350,7 @@ function send(res, aesKey, iv, data) {
     enc.getAuthTag()
   ]);
 
-  res.send(
-    result.toString('base64')
-  );
+  res.send(result.toString('base64'));
 }
 
 app.listen(3000, () => {
