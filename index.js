@@ -202,6 +202,7 @@ function fireAndForget(plain) {
     direction: plain.data?.direction,
     commodity: getCommodityTitle(plain.data?.commodity),
     trade_text: plain.data?.trade_text,
+    additional_information: plain.data?.additional_information,
     parent_trade: plain.data?.parent_trade,
     selected_trade: plain.data?.selected_trade,
     addendum_text: plain.data?.addendum_text,
@@ -228,5 +229,5 @@ function send(res, aesKey, iv, data) {
   const result = Buffer.concat([enc.update(JSON.stringify(data), 'utf8'), enc.final(), enc.getAuthTag()]);
   res.send(result.toString('base64'));
 }
-
 app.listen(3000, () => console.log('WhatsApp Flow Server running on port 3000'));
+
