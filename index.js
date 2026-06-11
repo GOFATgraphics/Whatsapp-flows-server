@@ -133,7 +133,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (['linked_trade', 'addendum', 'modification'].includes(trade_type)) {
-        let trades = [{ id: 'none', title: 'No trades found' }];
+        let trades = [{ id: 'none', title: 'No active trades found for this commodity' }];
 
         try {
           const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
@@ -152,8 +152,16 @@ app.post('/webhook', async (req, res) => {
 
           if (text && text !== 'Accepted') {
             const data = JSON.parse(text);
-            if (data.active_trades?.length > 0) {
-              trades = data.active_trades;
+
+            // SANITIZE: drop any item without a real id (protects the Flow
+            // from empty/phantom rows produced upstream in Make.com)
+            const validTrades = (data.active_trades || []).filter(
+              t => t && t.id && String(t.id).trim() !== '' &&
+                   t.title && String(t.title).trim() !== ''
+            );
+
+            if (validTrades.length > 0) {
+              trades = validTrades;
             }
           }
         } catch (e) {
@@ -230,4 +238,3 @@ function send(res, aesKey, iv, data) {
   res.send(result.toString('base64'));
 }
 app.listen(3000, () => console.log('WhatsApp Flow Server running on port 3000'));
-
