@@ -6,6 +6,7 @@ app.use(express.json());
 
 const PRIVATE_KEY_B64 = process.env.PRIVATE_KEY_B64;
 const FLOW_HANDLER_WEBHOOK_URL = process.env.FLOW_HANDLER_WEBHOOK_URL;
+const ADD_NOTE_WEBHOOK_URL = process.env.ADD_NOTE_WEBHOOK_URL; // NEW: dedicated Add Note Handler webhook
 
 // ====================== COMMODITY LIST (alphabetical) ======================
 const COMMODITY_OPTIONS = [
@@ -215,6 +216,8 @@ app.post('/webhook', async (req, res) => {
 
 // ====================== HELPERS ======================
 function fireAndForget(plain) {
+  const isNote = plain.screen === 'Add_Note_Screen';
+
   const payload = {
     action: plain.screen === 'New_Trade_Screen' ? 'new_trade' :
             plain.screen === 'Linked_Trade_Screen' ? 'linked_trade' :
@@ -233,13 +236,16 @@ function fireAndForget(plain) {
     from: plain.flow_token
   };
 
-  fetch(FLOW_HANDLER_WEBHOOK_URL, {
+  // Note submissions go to the dedicated Add Note Handler; everything else to the Flow Handler
+  const targetUrl = isNote ? ADD_NOTE_WEBHOOK_URL : FLOW_HANDLER_WEBHOOK_URL;
+
+  fetch(targetUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   })
     .then(r => r.text())
-    .then(text => console.log(`✅ Background ${payload.action}:`, text))
+    .then(text => console.log(`✅ Background ${payload.action} -> ${isNote ? 'AddNoteHandler' : 'FlowHandler'}:`, text))
     .catch(e => console.error('Background error:', e.message));
 }
 
