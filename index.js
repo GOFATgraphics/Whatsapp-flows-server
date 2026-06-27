@@ -7,32 +7,64 @@ app.use(express.json());
 const PRIVATE_KEY_B64 = process.env.PRIVATE_KEY_B64;
 const FLOW_HANDLER_WEBHOOK_URL = process.env.FLOW_HANDLER_WEBHOOK_URL;
 
-// ====================== COMMODITY LIST (CATEGORIES — MATCHES MATRIX) ======================
+// ====================== COMMODITY LIST (alphabetical) ======================
 const COMMODITY_OPTIONS = [
-  { id: 'raw_cashew_nuts', title: 'Raw Cashew Nuts' },
-  { id: 'rice', title: 'Rice' },
-  { id: 'sugar', title: 'Sugar' },
   { id: 'barley', title: 'Barley' },
+  { id: 'chick_peas', title: 'Chick Peas' },
+  { id: 'green_peas', title: 'Green Peas' },
   { id: 'maize', title: 'Maize' },
-  { id: 'wheat', title: 'Wheat' },
-  { id: 'wheat_bran', title: 'Wheat Bran' },
   { id: 'mustard_seed', title: 'Mustard Seed' },
+  { id: 'palm_oil', title: 'Palm Oil' },
+  { id: 'pigeon_peas', title: 'Pigeon Peas' },
   { id: 'rapeseed', title: 'Rapeseed' },
   { id: 'rapeseed_meal', title: 'Rapeseed Meal' },
+  { id: 'raw_cashew_nuts', title: 'Raw Cashew Nuts' },
+  { id: 'red_lentils', title: 'Red Lentils' },
+  { id: 'rice', title: 'Rice' },
   { id: 'sesame_seed', title: 'Sesame Seed' },
   { id: 'soybean', title: 'Soybean' },
   { id: 'soybean_meal', title: 'Soybean Meal' },
-  { id: 'palm_oil', title: 'Palm Oil' },
-  { id: 'chick_peas', title: 'Chick Peas' },
-  { id: 'green_peas', title: 'Green Peas' },
-  { id: 'pigeon_peas', title: 'Pigeon Peas' },
-  { id: 'red_lentils', title: 'Red Lentils' }
+  { id: 'sugar', title: 'Sugar' },
+  { id: 'wheat', title: 'Wheat' },
+  { id: 'wheat_bran', title: 'Wheat Bran' }
 ];
 
 // ====================== COMMODITY LOOKUP ======================
 function getCommodityTitle(id) {
   const match = COMMODITY_OPTIONS.find(c => c.id === id);
   return match ? match.title : id;
+}
+
+// ====================== SHARED: fetch active trades from Make ======================
+async function fetchActiveTrades({ direction, commodityTitle, trade_type }) {
+  let trades = [{ id: 'none', title: 'No active trades found for this commodity' }];
+  try {
+    const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'get_active_trades',
+        direction: direction,
+        commodity: commodityTitle,
+        trade_type: trade_type
+      })
+    });
+
+    const text = await response.text();
+    console.log(`🔄 get_active_trades for ${trade_type} (commodity: ${commodityTitle}):`, text);
+
+    if (text && text !== 'Accepted') {
+      const data = JSON.parse(text);
+      const validTrades = (data.active_trades || []).filter(
+        t => t && t.id && String(t.id).trim() !== '' &&
+             t.title && String(t.title).trim() !== ''
+      );
+      if (validTrades.length > 0) trades = validTrades;
+    }
+  } catch (e) {
+    console.error('Failed to fetch trades:', e.message);
+  }
+  return trades;
 }
 
 app.post('/webhook', async (req, res) => {
@@ -65,14 +97,29 @@ app.post('/webhook', async (req, res) => {
     const plain = JSON.parse(decipher.update(body, undefined, 'utf8') + decipher.final('utf8'));
     const flippedIv = Buffer.from(iv.map(b => ~b));
 
-    console.log('📥 Action:', plain.action, '| Screen:', plain.screen, '| Type:', plain.data?.trade_type, '| Commodity:', plain.data?.commodity);
+    console.log('📥 Action:', plain.action, '| Screen:', plain.screen, '| Type:', plain.data?.trade_type, '| Commodity:', plain.data?.commodity, '| FlowToken:', plain.flow_token);
 
-    // ================= PING & INIT =================
+    // ================= PING =================
     if (plain.action === 'ping') {
       return send(res, aesKey, flippedIv, { version: '7.0', data: { status: 'active' } });
     }
 
+    // ================= INIT =================
+    // Distinguish the Note Flow from the Trade Flow by the flow_token.
+    // When you publish the Note Flow, set its flow token to contain "note".
     if (plain.action === 'INIT' || !plain.screen) {
+      const token = (plain.flow_token || '').toLowerCase();
+
+      if (token.includes('note')) {
+        // NOTE FLOW INIT -> first screen of the Note flow
+        return send(res, aesKey, flippedIv, {
+          version: '7.0',
+          screen: 'Note_Commodity_Screen',
+          data: { commodity_options: COMMODITY_OPTIONS }
+        });
+      }
+
+      // TRADE FLOW INIT (unchanged)
       return send(res, aesKey, flippedIv, {
         version: '7.0',
         screen: 'Trade_Details',
@@ -92,6 +139,25 @@ app.post('/webhook', async (req, res) => {
       });
     }
 
+    // ================= NOTE FLOW: commodity chosen -> fetch trades =================
+    if (plain.screen === 'Note_Commodity_Screen') {
+      const commodity = plain.data?.commodity || '';
+      const commodityTitle = getCommodityTitle(commodity);
+
+      // add_note uses the modification-style filter (Approved + Awaiting Approval)
+      const trades = await fetchActiveTrades({
+        direction: '',
+        commodityTitle,
+        trade_type: 'add_note'
+      });
+
+      return send(res, aesKey, flippedIv, {
+        version: '7.0',
+        screen: 'Add_Note_Screen',
+        data: { commodity: commodityTitle, active_trades: trades }
+      });
+    }
+
     // ================= TRADE DETAILS SCREEN =================
     if (plain.screen === 'Trade_Details') {
       const trade_type = plain.data?.trade_type;
@@ -108,40 +174,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (['linked_trade', 'addendum', 'modification'].includes(trade_type)) {
-        let trades = [{ id: 'none', title: 'No active trades found for this commodity' }];
-
-        try {
-          const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'get_active_trades',
-              direction: direction,
-              commodity: commodityTitle,
-              trade_type: trade_type
-            })
-          });
-
-          const text = await response.text();
-          console.log(`🔄 get_active_trades response for ${trade_type} (commodity: ${commodityTitle}):`, text);
-
-          if (text && text !== 'Accepted') {
-            const data = JSON.parse(text);
-
-            // SANITIZE: drop any item without a real id (protects the Flow
-            // from empty/phantom rows produced upstream in Make.com)
-            const validTrades = (data.active_trades || []).filter(
-              t => t && t.id && String(t.id).trim() !== '' &&
-                   t.title && String(t.title).trim() !== ''
-            );
-
-            if (validTrades.length > 0) {
-              trades = validTrades;
-            }
-          }
-        } catch (e) {
-          console.error('Failed to fetch trades:', e.message);
-        }
+        const trades = await fetchActiveTrades({ direction, commodityTitle, trade_type });
 
         let screenName;
         let dataPayload = {};
@@ -167,6 +200,11 @@ app.post('/webhook', async (req, res) => {
 
     // ================= SUBMISSIONS =================
     fireAndForget(plain);
+
+    // Note flow gets its own success screen; everything else uses Success_Screen
+    if (plain.screen === 'Add_Note_Screen') {
+      return send(res, aesKey, flippedIv, { version: '7.0', screen: 'Note_Success_Screen', data: {} });
+    }
     return sendSuccess(res, aesKey, flippedIv);
 
   } catch (err) {
@@ -180,7 +218,8 @@ function fireAndForget(plain) {
   const payload = {
     action: plain.screen === 'New_Trade_Screen' ? 'new_trade' :
             plain.screen === 'Linked_Trade_Screen' ? 'linked_trade' :
-            plain.screen === 'Addendum_Screen' ? 'addendum' : 'modification',
+            plain.screen === 'Addendum_Screen' ? 'addendum' :
+            plain.screen === 'Add_Note_Screen' ? 'add_note' : 'modification',
 
     direction: plain.data?.direction,
     commodity: getCommodityTitle(plain.data?.commodity),
@@ -190,6 +229,7 @@ function fireAndForget(plain) {
     selected_trade: plain.data?.selected_trade,
     addendum_text: plain.data?.addendum_text,
     modification_text: plain.data?.modification_text,
+    note_text: plain.data?.note_text,
     from: plain.flow_token
   };
 
@@ -212,4 +252,5 @@ function send(res, aesKey, iv, data) {
   const result = Buffer.concat([enc.update(JSON.stringify(data), 'utf8'), enc.final(), enc.getAuthTag()]);
   res.send(result.toString('base64'));
 }
+
 app.listen(3000, () => console.log('WhatsApp Flow Server running on port 3000'));
