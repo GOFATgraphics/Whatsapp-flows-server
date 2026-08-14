@@ -6,7 +6,12 @@ app.use(express.json());
 
 const PRIVATE_KEY_B64 = process.env.PRIVATE_KEY_B64;
 const FLOW_HANDLER_WEBHOOK_URL = process.env.FLOW_HANDLER_WEBHOOK_URL;
-const ADD_NOTE_WEBHOOK_URL = process.env.ADD_NOTE_WEBHOOK_URL; // NEW: dedicated Add Note Handler webhook
+const ADD_NOTE_WEBHOOK_URL = process.env.ADD_NOTE_WEBHOOK_URL; // dedicated Add Note Handler webhook
+
+// ====================== STARTUP ENV VAR CHECK ======================
+if (!PRIVATE_KEY_B64) console.error('❌ MISSING ENV VAR: PRIVATE_KEY_B64');
+if (!FLOW_HANDLER_WEBHOOK_URL) console.error('❌ MISSING ENV VAR: FLOW_HANDLER_WEBHOOK_URL');
+if (!ADD_NOTE_WEBHOOK_URL) console.error('❌ MISSING ENV VAR: ADD_NOTE_WEBHOOK_URL');
 
 // ====================== COMMODITY LIST (alphabetical) ======================
 const COMMODITY_OPTIONS = [
@@ -32,6 +37,7 @@ const COMMODITY_OPTIONS = [
 
 // ====================== COMMODITY LOOKUP ======================
 function getCommodityTitle(id) {
+  if (!id) return '';
   const match = COMMODITY_OPTIONS.find(c => c.id === id);
   return match ? match.title : id;
 }
@@ -40,19 +46,28 @@ function getCommodityTitle(id) {
 async function fetchActiveTrades({ direction, commodityTitle, trade_type }) {
   let trades = [{ id: 'none', title: 'No active trades found for this commodity' }];
   try {
+    const requestBody = {
+      action: 'get_active_trades',
+      direction: direction,
+      commodity: commodityTitle,
+      trade_type: trade_type
+    };
+
+    console.log(`📤 get_active_trades REQUEST:`, JSON.stringify(requestBody));
+
     const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'get_active_trades',
-        direction: direction,
-        commodity: commodityTitle,
-        trade_type: trade_type
-      })
+      body: JSON.stringify(requestBody)
     });
 
     const text = await response.text();
-    console.log(`🔄 get_active_trades for ${trade_type} (commodity: ${commodityTitle}):`, text);
+
+    if (text === 'Accepted') {
+      console.warn(`⚠️ get_active_trades for "${trade_type}" (commodity: "${commodityTitle}") -> Make returned "Accepted". No WebhookRespond module fired. Check the router filter condition for trade_type="${trade_type}" in Trade Flow Handler.`);
+    } else {
+      console.log(`🔄 get_active_trades RESPONSE for "${trade_type}" (commodity: "${commodityTitle}"):`, text);
+    }
 
     if (text && text !== 'Accepted') {
       const data = JSON.parse(text);
@@ -60,10 +75,14 @@ async function fetchActiveTrades({ direction, commodityTitle, trade_type }) {
         t => t && t.id && String(t.id).trim() !== '' &&
              t.title && String(t.title).trim() !== ''
       );
-      if (validTrades.length > 0) trades = validTrades;
+      if (validTrades.length > 0) {
+        trades = validTrades;
+      } else {
+        console.warn(`⚠️ get_active_trades for "${trade_type}" (commodity: "${commodityTitle}") -> Make responded but active_trades was empty. Likely a MASTER data/filter mismatch (check product_category column) rather than a routing failure.`);
+      }
     }
   } catch (e) {
-    console.error('Failed to fetch trades:', e.message);
+    console.error(`❌ Failed to fetch trades for trade_type="${trade_type}", commodity="${commodityTitle}":`, e.message);
   }
   return trades;
 }
@@ -98,7 +117,9 @@ app.post('/webhook', async (req, res) => {
     const plain = JSON.parse(decipher.update(body, undefined, 'utf8') + decipher.final('utf8'));
     const flippedIv = Buffer.from(iv.map(b => ~b));
 
-    console.log('📥 Action:', plain.action, '| Screen:', plain.screen, '| Type:', plain.data?.trade_type, '| Commodity:', plain.data?.commodity, '| FlowToken:', plain.flow_token);
+    const screen = (plain.screen || '').trim();
+
+    console.log('📥 Action:', plain.action, '| Screen:', screen, '| Type:', plain.data?.trade_type, '| Commodity:', plain.data?.commodity, '| FlowToken:', plain.flow_token);
 
     // ================= PING =================
     if (plain.action === 'ping') {
@@ -106,13 +127,10 @@ app.post('/webhook', async (req, res) => {
     }
 
     // ================= INIT =================
-    // Distinguish the Note Flow from the Trade Flow by the flow_token.
-    // When you publish the Note Flow, set its flow token to contain "note".
-    if (plain.action === 'INIT' || !plain.screen) {
+    if (plain.action === 'INIT' || !screen) {
       const token = (plain.flow_token || '').toLowerCase();
 
       if (token.includes('note')) {
-        // NOTE FLOW INIT -> first screen of the Note flow
         return send(res, aesKey, flippedIv, {
           version: '7.0',
           screen: 'Note_Commodity_Screen',
@@ -120,7 +138,6 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
-      // TRADE FLOW INIT
       return send(res, aesKey, flippedIv, {
         version: '7.0',
         screen: 'Trade_Details',
@@ -131,8 +148,8 @@ app.post('/webhook', async (req, res) => {
           ],
           trade_type_options: [
             { id: 'new_trade', title: 'New Trade' },
-            { id: 'linked_trade', title: 'Linked Trade' },
             { id: 'similar_trade', title: 'Similar Trade' },
+            { id: 'linked_trade', title: 'Linked Trade' },
             { id: 'modification', title: 'Modification' },
             { id: 'addendum', title: 'Addendum' }
           ],
@@ -142,11 +159,10 @@ app.post('/webhook', async (req, res) => {
     }
 
     // ================= NOTE FLOW: commodity chosen -> fetch trades =================
-    if (plain.screen === 'Note_Commodity_Screen') {
+    if (screen === 'Note_Commodity_Screen') {
       const commodity = plain.data?.commodity || '';
       const commodityTitle = getCommodityTitle(commodity);
 
-      // add_note uses the modification-style filter (Approved + Awaiting Approval)
       const trades = await fetchActiveTrades({
         direction: '',
         commodityTitle,
@@ -161,7 +177,7 @@ app.post('/webhook', async (req, res) => {
     }
 
     // ================= TRADE DETAILS SCREEN =================
-    if (plain.screen === 'Trade_Details') {
+    if (screen === 'Trade_Details') {
       const trade_type = plain.data?.trade_type;
       const direction = plain.data?.direction;
       const commodity = plain.data?.commodity || '';
@@ -184,12 +200,12 @@ app.post('/webhook', async (req, res) => {
         if (trade_type === 'linked_trade') {
           screenName = 'Linked_Trade_Screen';
           dataPayload = { direction, commodity: commodityTitle, active_trades: trades };
-        } else if (trade_type === 'similar_trade') {
-          screenName = 'Similar_Trade_Screen';
-          dataPayload = { direction, commodity: commodityTitle, active_trades: trades };
         } else if (trade_type === 'modification') {
           screenName = 'Modification_Screen';
           dataPayload = { commodity: commodityTitle, active_trades: trades };
+        } else if (trade_type === 'similar_trade') {
+          screenName = 'Similar_Trade_Screen';
+          dataPayload = { direction, commodity: commodityTitle, active_trades: trades };
         } else {
           screenName = 'Addendum_Screen';
           dataPayload = { commodity: commodityTitle, active_trades: trades };
@@ -204,10 +220,9 @@ app.post('/webhook', async (req, res) => {
     }
 
     // ================= SUBMISSIONS =================
-    fireAndForget(plain);
+    fireAndForget(plain, screen);
 
-    // Note flow gets its own success screen; everything else uses Success_Screen
-    if (plain.screen === 'Add_Note_Screen') {
+    if (screen === 'Add_Note_Screen') {
       return send(res, aesKey, flippedIv, { version: '7.0', screen: 'Note_Success_Screen', data: {} });
     }
     return sendSuccess(res, aesKey, flippedIv);
@@ -219,21 +234,27 @@ app.post('/webhook', async (req, res) => {
 });
 
 // ====================== HELPERS ======================
-function fireAndForget(plain) {
-  const isNote = plain.screen === 'Add_Note_Screen';
+function fireAndForget(plain, screen) {
+  const isNote = screen === 'Add_Note_Screen';
+
+  const actionMap = {
+    'New_Trade_Screen': 'new_trade',
+    'Similar_Trade_Screen': 'similar_trade',
+    'Linked_Trade_Screen': 'linked_trade',
+    'Addendum_Screen': 'addendum',
+    'Add_Note_Screen': 'add_note',
+    'Modification_Screen': 'modification'
+  };
 
   const payload = {
-    action: plain.screen === 'New_Trade_Screen' ? 'new_trade' :
-            plain.screen === 'Linked_Trade_Screen' ? 'linked_trade' :
-            plain.screen === 'Similar_Trade_Screen' ? 'similar_trade' :
-            plain.screen === 'Addendum_Screen' ? 'addendum' :
-            plain.screen === 'Add_Note_Screen' ? 'add_note' : 'modification',
+    action: actionMap[screen] || 'modification',
 
     direction: plain.data?.direction,
     commodity: getCommodityTitle(plain.data?.commodity),
     trade_text: plain.data?.trade_text,
     additional_information: plain.data?.additional_information,
     parent_trade: plain.data?.parent_trade,
+    source_trade: plain.data?.source_trade,
     selected_trade: plain.data?.selected_trade,
     addendum_text: plain.data?.addendum_text,
     modification_text: plain.data?.modification_text,
@@ -241,8 +262,12 @@ function fireAndForget(plain) {
     from: plain.flow_token
   };
 
-  // Note submissions go to the dedicated Add Note Handler; everything else to the Flow Handler
   const targetUrl = isNote ? ADD_NOTE_WEBHOOK_URL : FLOW_HANDLER_WEBHOOK_URL;
+
+  if (!targetUrl) {
+    console.error(`❌ fireAndForget: target URL is undefined for action="${payload.action}" (isNote=${isNote}). Check ${isNote ? 'ADD_NOTE_WEBHOOK_URL' : 'FLOW_HANDLER_WEBHOOK_URL'} env var on Render.`);
+    return;
+  }
 
   fetch(targetUrl, {
     method: 'POST',
