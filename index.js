@@ -120,7 +120,7 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
-      // TRADE FLOW INIT (unchanged)
+      // TRADE FLOW INIT
       return send(res, aesKey, flippedIv, {
         version: '7.0',
         screen: 'Trade_Details',
@@ -132,6 +132,7 @@ app.post('/webhook', async (req, res) => {
           trade_type_options: [
             { id: 'new_trade', title: 'New Trade' },
             { id: 'linked_trade', title: 'Linked Trade' },
+            { id: 'similar_trade', title: 'Similar Trade' },
             { id: 'modification', title: 'Modification' },
             { id: 'addendum', title: 'Addendum' }
           ],
@@ -174,7 +175,7 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
-      if (['linked_trade', 'addendum', 'modification'].includes(trade_type)) {
+      if (['linked_trade', 'addendum', 'modification', 'similar_trade'].includes(trade_type)) {
         const trades = await fetchActiveTrades({ direction, commodityTitle, trade_type });
 
         let screenName;
@@ -182,6 +183,9 @@ app.post('/webhook', async (req, res) => {
 
         if (trade_type === 'linked_trade') {
           screenName = 'Linked_Trade_Screen';
+          dataPayload = { direction, commodity: commodityTitle, active_trades: trades };
+        } else if (trade_type === 'similar_trade') {
+          screenName = 'Similar_Trade_Screen';
           dataPayload = { direction, commodity: commodityTitle, active_trades: trades };
         } else if (trade_type === 'modification') {
           screenName = 'Modification_Screen';
@@ -221,6 +225,7 @@ function fireAndForget(plain) {
   const payload = {
     action: plain.screen === 'New_Trade_Screen' ? 'new_trade' :
             plain.screen === 'Linked_Trade_Screen' ? 'linked_trade' :
+            plain.screen === 'Similar_Trade_Screen' ? 'similar_trade' :
             plain.screen === 'Addendum_Screen' ? 'addendum' :
             plain.screen === 'Add_Note_Screen' ? 'add_note' : 'modification',
 
