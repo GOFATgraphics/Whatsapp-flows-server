@@ -148,7 +148,7 @@ app.post('/webhook', async (req, res) => {
           ],
           trade_type_options: [
             { id: 'new_trade', title: 'New Trade' },
-            { id: 'similar_trade', title: 'Similar Trade' },
+            { id: 'cloned_trade', title: 'Cloned Trade' },
             { id: 'linked_trade', title: 'Linked Trade' },
             { id: 'modification', title: 'Modification' },
             { id: 'addendum', title: 'Addendum' }
@@ -191,7 +191,7 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
-      if (['linked_trade', 'addendum', 'modification', 'similar_trade'].includes(trade_type)) {
+      if (['linked_trade', 'addendum', 'modification', 'cloned_trade'].includes(trade_type)) {
         const trades = await fetchActiveTrades({ direction, commodityTitle, trade_type });
 
         let screenName;
@@ -203,8 +203,8 @@ app.post('/webhook', async (req, res) => {
         } else if (trade_type === 'modification') {
           screenName = 'Modification_Screen';
           dataPayload = { commodity: commodityTitle, active_trades: trades };
-        } else if (trade_type === 'similar_trade') {
-          screenName = 'Similar_Trade_Screen';
+        } else if (trade_type === 'cloned_trade') {
+          screenName = 'Cloned_Trade_Screen';
           dataPayload = { direction, commodity: commodityTitle, active_trades: trades };
         } else {
           screenName = 'Addendum_Screen';
@@ -239,7 +239,7 @@ function fireAndForget(plain, screen) {
 
   const actionMap = {
     'New_Trade_Screen': 'new_trade',
-    'Similar_Trade_Screen': 'similar_trade',
+    'Cloned_Trade_Screen': 'cloned_trade',
     'Linked_Trade_Screen': 'linked_trade',
     'Addendum_Screen': 'addendum',
     'Add_Note_Screen': 'add_note',
