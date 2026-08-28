@@ -42,6 +42,14 @@ function getCommodityTitle(id) {
   return match ? match.title : id;
 }
 
+// ====================== PHONE NUMBER EXTRACTION ======================
+// flow_token for note flows is prefixed "note_<number>" so INIT can detect it.
+// Strip that prefix here so downstream consumers (Add Note Handler) get a clean number.
+function extractPhoneNumber(flowToken) {
+  if (!flowToken) return '';
+  return flowToken.replace(/^note_/i, '');
+}
+
 // ====================== SHARED: fetch active trades from Make ======================
 async function fetchActiveTrades({ direction, commodityTitle, trade_type }) {
   let trades = [{ id: 'none', title: 'No active trades found for this commodity' }];
@@ -259,7 +267,7 @@ function fireAndForget(plain, screen) {
     addendum_text: plain.data?.addendum_text,
     modification_text: plain.data?.modification_text,
     note_text: plain.data?.note_text,
-    from: plain.flow_token
+    from: extractPhoneNumber(plain.flow_token)
   };
 
   const targetUrl = isNote ? ADD_NOTE_WEBHOOK_URL : FLOW_HANDLER_WEBHOOK_URL;
