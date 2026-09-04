@@ -158,7 +158,9 @@ app.post('/webhook', async (req, res) => {
             { id: 'linked_trade', title: 'Linked Trade' },
             { id: 'modification', title: 'Modification' },
             { id: 'addendum', title: 'Addendum' },
-            { id: 'back_to_back', title: 'Back-to-Back' }
+            { id: 'back_to_back', title: 'Back-to-Back' },
+            { id: 'unlink', title: 'Unlink' },
+            { id: 'relink', title: 'Relink' }
           ],
           commodity_options: COMMODITY_OPTIONS
         }
@@ -195,6 +197,40 @@ app.post('/webhook', async (req, res) => {
           version: '7.0',
           screen: 'New_Trade_Screen',
           data: { direction, commodity: commodityTitle }
+        });
+      }
+
+      // Unlink / Relink: update existing MASTER row — no direction ask/echo (not B2B)
+      if (trade_type === 'unlink' || trade_type === 'relink') {
+        const trades = await fetchActiveTrades({
+          direction: '',
+          commodityTitle,
+          trade_type
+        });
+
+        if (trade_type === 'unlink') {
+          return send(res, aesKey, flippedIv, {
+            version: '7.0',
+            screen: 'Unlink_Screen',
+            data: { commodity: commodityTitle, active_trades: trades }
+          });
+        }
+
+        // Relink: second list for parent candidates (Make filters via trade_type=relink_parent)
+        const parentTrades = await fetchActiveTrades({
+          direction: '',
+          commodityTitle,
+          trade_type: 'relink_parent'
+        });
+
+        return send(res, aesKey, flippedIv, {
+          version: '7.0',
+          screen: 'Relink_Screen',
+          data: {
+            commodity: commodityTitle,
+            active_trades: trades,
+            parent_trades: parentTrades
+          }
         });
       }
 
@@ -254,7 +290,9 @@ function fireAndForget(plain, screen) {
     'Addendum_Screen': 'addendum',
     'Add_Note_Screen': 'add_note',
     'Modification_Screen': 'modification',
-    'Back_to_Back_Screen': 'back_to_back'
+    'Back_to_Back_Screen': 'back_to_back',
+    'Unlink_Screen': 'unlink',
+    'Relink_Screen': 'relink'
   };
 
   const payload = {
