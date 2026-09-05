@@ -9,9 +9,9 @@ const FLOW_HANDLER_WEBHOOK_URL = process.env.FLOW_HANDLER_WEBHOOK_URL;
 const ADD_NOTE_WEBHOOK_URL = process.env.ADD_NOTE_WEBHOOK_URL; // dedicated Add Note Handler webhook
 
 // ====================== STARTUP ENV VAR CHECK ======================
-if (!PRIVATE_KEY_B64) console.error('\u274c MISSING ENV VAR: PRIVATE_KEY_B64');
-if (!FLOW_HANDLER_WEBHOOK_URL) console.error('\u274c MISSING ENV VAR: FLOW_HANDLER_WEBHOOK_URL');
-if (!ADD_NOTE_WEBHOOK_URL) console.error('\u274c MISSING ENV VAR: ADD_NOTE_WEBHOOK_URL');
+if (!PRIVATE_KEY_B64) console.error('❌ MISSING ENV VAR: PRIVATE_KEY_B64');
+if (!FLOW_HANDLER_WEBHOOK_URL) console.error('❌ MISSING ENV VAR: FLOW_HANDLER_WEBHOOK_URL');
+if (!ADD_NOTE_WEBHOOK_URL) console.error('❌ MISSING ENV VAR: ADD_NOTE_WEBHOOK_URL');
 
 // ====================== COMMODITY LIST (alphabetical) ======================
 const COMMODITY_OPTIONS = [
@@ -40,6 +40,33 @@ const DIRECTION_OPTIONS = [
   { id: 'sale', title: 'Sale' }
 ];
 
+const TRADE_TYPE_OPTIONS = [
+  { id: 'new_trade', title: 'New Trade' },
+  { id: 'cloned_trade', title: 'Cloned Trade' },
+  { id: 'linked_trade', title: 'Linked Trade' },
+  { id: 'modification', title: 'Modification' },
+  { id: 'addendum', title: 'Addendum' },
+  { id: 'back_to_back', title: 'Back-to-Back' },
+  { id: 'unlink', title: 'Unlink' },
+  { id: 'relink', title: 'Relink' }
+];
+
+// Letter shortcut aliases in flow_token: trade_<alias>_<wa>
+// Accept short forms (new) and server ids (new_trade).
+const SHORTCUT_ALIAS_TO_ID = {
+  new: 'new_trade',
+  new_trade: 'new_trade',
+  cloned: 'cloned_trade',
+  cloned_trade: 'cloned_trade',
+  linked: 'linked_trade',
+  linked_trade: 'linked_trade',
+  modification: 'modification',
+  addendum: 'addendum',
+  back_to_back: 'back_to_back',
+  unlink: 'unlink',
+  relink: 'relink'
+};
+
 // ====================== COMMODITY LOOKUP ======================
 function getCommodityTitle(id) {
   if (!id) return '';
@@ -47,10 +74,33 @@ function getCommodityTitle(id) {
   return match ? match.title : id;
 }
 
-// ====================== PHONE NUMBER EXTRACTION ======================
+// ====================== FLOW TOKEN HELPERS ======================
+function parseTradeShortcutToken(flowToken) {
+  if (!flowToken) return null;
+  const raw = String(flowToken).trim();
+  const m = raw.match(/^trade_(.+)$/i);
+  if (!m) return null;
+
+  const rest = m[1];
+  const restLower = rest.toLowerCase();
+  const aliases = Object.keys(SHORTCUT_ALIAS_TO_ID).sort((a, b) => b.length - a.length);
+
+  for (const alias of aliases) {
+    const prefix = alias + '_';
+    if (restLower.startsWith(prefix)) {
+      const phone = rest.slice(prefix.length);
+      if (!phone) return null;
+      return { tradeType: SHORTCUT_ALIAS_TO_ID[alias], phone };
+    }
+  }
+  return null;
+}
+
 function extractPhoneNumber(flowToken) {
   if (!flowToken) return '';
-  return flowToken.replace(/^note_/i, '');
+  const shortcut = parseTradeShortcutToken(flowToken);
+  if (shortcut) return shortcut.phone;
+  return String(flowToken).replace(/^note_/i, '');
 }
 
 // ====================== SHARED: fetch active trades from Make ======================
@@ -64,7 +114,7 @@ async function fetchActiveTrades({ direction, commodityTitle, trade_type }) {
       trade_type: trade_type
     };
 
-    console.log(`\ud83d\udce4 get_active_trades REQUEST:`, JSON.stringify(requestBody));
+    console.log(`📤 get_active_trades REQUEST:`, JSON.stringify(requestBody));
 
     const response = await fetch(FLOW_HANDLER_WEBHOOK_URL, {
       method: 'POST',
@@ -75,9 +125,9 @@ async function fetchActiveTrades({ direction, commodityTitle, trade_type }) {
     const text = await response.text();
 
     if (text === 'Accepted') {
-      console.warn(`\u26a0\ufe0f get_active_trades for "${trade_type}" (commodity: "${commodityTitle}") -> Make returned "Accepted". No WebhookRespond module fired. Check the router filter condition for trade_type="${trade_type}" in Trade Flow Handler.`);
+      console.warn(`⚠️ get_active_trades for "${trade_type}" (commodity: "${commodityTitle}") -> Make returned "Accepted". No WebhookRespond module fired. Check the router filter condition for trade_type="${trade_type}" in Trade Flow Handler.`);
     } else {
-      console.log(`\ud83d\udd04 get_active_trades RESPONSE for "${trade_type}" (commodity: "${commodityTitle}"):`, text);
+      console.log(`🔄 get_active_trades RESPONSE for "${trade_type}" (commodity: "${commodityTitle}"):`, text);
     }
 
     if (text && text !== 'Accepted') {
@@ -89,11 +139,11 @@ async function fetchActiveTrades({ direction, commodityTitle, trade_type }) {
       if (validTrades.length > 0) {
         trades = validTrades;
       } else {
-        console.warn(`\u26a0\ufe0f get_active_trades for "${trade_type}" (commodity: "${commodityTitle}") -> Make responded but active_trades was empty. Likely a MASTER data/filter mismatch (check product_category column) rather than a routing failure.`);
+        console.warn(`⚠️ get_active_trades for "${trade_type}" (commodity: "${commodityTitle}") -> Make responded but active_trades was empty. Likely a MASTER data/filter mismatch (check product_category column) rather than a routing failure.`);
       }
     }
   } catch (e) {
-    console.error(`\u274c Failed to fetch trades for trade_type="${trade_type}", commodity="${commodityTitle}":`, e.message);
+    console.error(`❌ Failed to fetch trades for trade_type="${trade_type}", commodity="${commodityTitle}":`, e.message);
   }
   return trades;
 }
@@ -130,7 +180,7 @@ app.post('/webhook', async (req, res) => {
 
     const screen = (plain.screen || '').trim();
 
-    console.log('\ud83d\udce5 Action:', plain.action, '| Screen:', screen, '| Type:', plain.data?.trade_type, '| Commodity:', plain.data?.commodity, '| FlowToken:', plain.flow_token);
+    console.log('📥 Action:', plain.action, '| Screen:', screen, '| Type:', plain.data?.trade_type, '| Commodity:', plain.data?.commodity, '| FlowToken:', plain.flow_token);
 
     // ================= PING =================
     if (plain.action === 'ping') {
@@ -139,9 +189,11 @@ app.post('/webhook', async (req, res) => {
 
     // ================= INIT =================
     if (plain.action === 'INIT' || !screen) {
-      const token = (plain.flow_token || '').toLowerCase();
+      const token = plain.flow_token || '';
+      const tokenLower = token.toLowerCase();
 
-      if (token.includes('note')) {
+      // Notes Flow: note_<wa> (keep startsWith so trade_* never false-positives)
+      if (tokenLower.startsWith('note_') || tokenLower.includes('note')) {
         return send(res, aesKey, flippedIv, {
           version: '7.0',
           screen: 'Note_Commodity_Screen',
@@ -149,22 +201,28 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
+      // Letter shortcuts: trade_<type>_<wa> → pre-set trade_type, single option (skip picker)
+      const shortcut = parseTradeShortcutToken(token);
+      if (shortcut) {
+        const opt = TRADE_TYPE_OPTIONS.find(o => o.id === shortcut.tradeType);
+        console.log(`⌨️ Trade shortcut INIT: type=${shortcut.tradeType} phone=${shortcut.phone}`);
+        return send(res, aesKey, flippedIv, {
+          version: '7.0',
+          screen: 'Trade_Details',
+          data: {
+            trade_type: shortcut.tradeType,
+            trade_type_options: opt ? [opt] : TRADE_TYPE_OPTIONS,
+            commodity_options: COMMODITY_OPTIONS
+          }
+        });
+      }
+
+      // Manual open: full type picker
       return send(res, aesKey, flippedIv, {
         version: '7.0',
         screen: 'Trade_Details',
         data: {
-          // Direction is collected on New/Cloned/Linked screens only \u2014 not on Trade_Details
-          // (Unlink/Relink/B2B/Mod/Addendum never ask).
-          trade_type_options: [
-            { id: 'new_trade', title: 'New Trade' },
-            { id: 'cloned_trade', title: 'Cloned Trade' },
-            { id: 'linked_trade', title: 'Linked Trade' },
-            { id: 'modification', title: 'Modification' },
-            { id: 'addendum', title: 'Addendum' },
-            { id: 'back_to_back', title: 'Back-to-Back' },
-            { id: 'unlink', title: 'Unlink' },
-            { id: 'relink', title: 'Relink' }
-          ],
+          trade_type_options: TRADE_TYPE_OPTIONS,
           commodity_options: COMMODITY_OPTIONS
         }
       });
@@ -202,7 +260,7 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
-      // Unlink / Relink: update existing MASTER row \u2014 no direction ask/echo (not B2B)
+      // Unlink / Relink: update existing MASTER row — no direction ask/echo (not B2B)
       if (trade_type === 'unlink' || trade_type === 'relink') {
         const trades = await fetchActiveTrades({
           direction: '',
@@ -317,7 +375,7 @@ function fireAndForget(plain, screen) {
   const targetUrl = isNote ? ADD_NOTE_WEBHOOK_URL : FLOW_HANDLER_WEBHOOK_URL;
 
   if (!targetUrl) {
-    console.error(`\u274c fireAndForget: target URL is undefined for action="${payload.action}" (isNote=${isNote}). Check ${isNote ? 'ADD_NOTE_WEBHOOK_URL' : 'FLOW_HANDLER_WEBHOOK_URL'} env var on Render.`);
+    console.error(`❌ fireAndForget: target URL is undefined for action="${payload.action}" (isNote=${isNote}). Check ${isNote ? 'ADD_NOTE_WEBHOOK_URL' : 'FLOW_HANDLER_WEBHOOK_URL'} env var on Render.`);
     return;
   }
 
@@ -327,7 +385,7 @@ function fireAndForget(plain, screen) {
     body: JSON.stringify(payload)
   })
     .then(r => r.text())
-    .then(text => console.log(`\u2705 Background ${payload.action} -> ${isNote ? 'AddNoteHandler' : 'FlowHandler'}:`, text))
+    .then(text => console.log(`✅ Background ${payload.action} -> ${isNote ? 'AddNoteHandler' : 'FlowHandler'}:`, text))
     .catch(e => console.error('Background error:', e.message));
 }
 
