@@ -201,11 +201,12 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
-      // Letter shortcuts: trade_<type>_<wa> → pre-set trade_type, hide type radio
+      // Letter shortcuts: trade_<type>_<wa> → pre-set trade_type; hide type; U/R hide direction
       const shortcut = parseTradeShortcutToken(token);
       if (shortcut) {
         const opt = TRADE_TYPE_OPTIONS.find(o => o.id === shortcut.tradeType);
         console.log(`⌨️ Trade shortcut INIT: type=${shortcut.tradeType} phone=${shortcut.phone}`);
+        const showDirection = !['unlink', 'relink'].includes(shortcut.tradeType);
         return send(res, aesKey, flippedIv, {
           version: '7.0',
           screen: 'Trade_Details',
@@ -213,19 +214,21 @@ app.post('/webhook', async (req, res) => {
             trade_type: shortcut.tradeType,
             trade_type_options: opt ? [opt] : TRADE_TYPE_OPTIONS,
             show_trade_type: false,
+            show_direction: showDirection,
             direction_options: DIRECTION_OPTIONS,
             commodity_options: COMMODITY_OPTIONS
           }
         });
       }
 
-      // Manual open: full type picker
+      // Manual open: full type picker + direction required
       return send(res, aesKey, flippedIv, {
         version: '7.0',
         screen: 'Trade_Details',
         data: {
           trade_type_options: TRADE_TYPE_OPTIONS,
           show_trade_type: true,
+          show_direction: true,
           direction_options: DIRECTION_OPTIONS,
           commodity_options: COMMODITY_OPTIONS
         }
