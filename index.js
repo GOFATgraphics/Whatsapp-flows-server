@@ -204,16 +204,19 @@ app.post('/webhook', async (req, res) => {
       // Letter shortcuts: trade_<type>_<wa> → pre-set trade_type, single option (skip picker)
       const shortcut = parseTradeShortcutToken(token);
       if (shortcut) {
+        const opt = TRADE_TYPE_OPTIONS.find(o => o.id === shortcut.tradeType);
         console.log(`⌨️ Trade shortcut INIT: type=${shortcut.tradeType} phone=${shortcut.phone}`);
-        const showDirection = !['unlink', 'relink'].includes(shortcut.tradeType);
-        // Omit hidden option arrays so Meta doesn't paint orphan Purchase/Sale / Relink labels.
+        const isUR = ['unlink', 'relink'].includes(shortcut.tradeType);
+        const showDirection = !isUR;
+        // U/R: hide purchase/sale only; keep type radio. Other letters: hide type chrome.
         const data = {
           trade_type: shortcut.tradeType,
-          show_trade_type: false,
+          show_trade_type: isUR,
           show_direction: showDirection,
           commodity_options: COMMODITY_OPTIONS
         };
         if (showDirection) data.direction_options = DIRECTION_OPTIONS;
+        if (isUR && opt) data.trade_type_options = [opt];
         return send(res, aesKey, flippedIv, {
           version: '7.0',
           screen: 'Trade_Details',
