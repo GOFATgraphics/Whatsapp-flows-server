@@ -51,6 +51,14 @@ const TRADE_TYPE_OPTIONS = [
   { id: 'relink', title: 'Relink' }
 ];
 
+// Link (LK): join an existing sale to a purchase by writing the purchase ref into the sale's
+// CL parent_reference. No new trade, no new ref. Make owns the filtering and the write.
+const LINK_OPTION = { id: 'link', title: 'Link Sale to Purchase' };
+// Kept out of the manual-open picker until the Flow with Link_Screen is published.
+// Then set SHOW_LINK_IN_PICKER=true on Render (no code push needed).
+const SHOW_LINK_IN_PICKER = process.env.SHOW_LINK_IN_PICKER === 'true';
+const ALL_TRADE_TYPE_OPTIONS = [...TRADE_TYPE_OPTIONS, LINK_OPTION];
+
 // Letter shortcut aliases in flow_token: trade_<alias>_<wa>
 // Accept short forms (new) and server ids (new_trade).
 const SHORTCUT_ALIAS_TO_ID = {
@@ -64,7 +72,9 @@ const SHORTCUT_ALIAS_TO_ID = {
   addendum: 'addendum',
   back_to_back: 'back_to_back',
   unlink: 'unlink',
-  relink: 'relink'
+  relink: 'relink',
+  link: 'link',
+  lk: 'link'
 };
 
 // ====================== COMMODITY LOOKUP ======================
@@ -204,11 +214,11 @@ app.post('/webhook', async (req, res) => {
       // Letter shortcuts: trade_<type>_<wa> → pre-set trade_type, single option (skip picker)
       const shortcut = parseTradeShortcutToken(token);
       if (shortcut) {
-        const opt = TRADE_TYPE_OPTIONS.find(o => o.id === shortcut.tradeType);
+        const opt = ALL_TRADE_TYPE_OPTIONS.find(o => o.id === shortcut.tradeType);
         console.log(`⌨️ Trade shortcut INIT: type=${shortcut.tradeType} phone=${shortcut.phone}`);
-        const isUR = ['unlink', 'relink', 'back_to_back'].includes(shortcut.tradeType);
+        const isUR = ['unlink', 'relink', 'back_to_back', 'link'].includes(shortcut.tradeType);
         const showDirection = !isUR;
-        // U/R/B: hide purchase/sale only; keep type radio. Other letters: hide type chrome.
+        // U/R/B/LK: hide purchase/sale only; keep type radio. Other letters: hide type chrome.
         const data = {
           trade_type: shortcut.tradeType,
           show_trade_type: isUR,
@@ -229,7 +239,7 @@ app.post('/webhook', async (req, res) => {
         version: '7.0',
         screen: 'Trade_Details',
         data: {
-          trade_type_options: TRADE_TYPE_OPTIONS,
+          trade_type_options: SHOW_LINK_IN_PICKER ? ALL_TRADE_TYPE_OPTIONS : TRADE_TYPE_OPTIONS,
           show_trade_type: true,
           show_direction: true,
           direction_options: DIRECTION_OPTIONS,
@@ -311,6 +321,25 @@ app.post('/webhook', async (req, res) => {
         });
       }
 
+      // Link: sale list + purchase list, no direction. Make decides which sales/purchases qualify
+      // (link_sale / link_purchase branches) and puts remaining qty + unit in purchase titles.
+      if (trade_type === 'link') {
+        const [saleTrades, purchaseTrades] = await Promise.all([
+          fetchActiveTrades({ direction: '', commodityTitle, trade_type: 'link_sale' }),
+          fetchActiveTrades({ direction: '', commodityTitle, trade_type: 'link_purchase' })
+        ]);
+
+        return send(res, aesKey, flippedIv, {
+          version: '7.0',
+          screen: 'Link_Screen',
+          data: {
+            commodity: commodityTitle,
+            sale_trades: saleTrades,
+            purchase_trades: purchaseTrades
+          }
+        });
+      }
+
       if (['linked_trade', 'addendum', 'modification', 'cloned_trade', 'back_to_back'].includes(trade_type)) {
         // Use Trade_Details direction for get_active when present (U/R already branched above).
         const trades = await fetchActiveTrades({
@@ -374,7 +403,8 @@ function fireAndForget(plain, screen) {
     'Modification_Screen': 'modification',
     'Back_to_Back_Screen': 'back_to_back',
     'Unlink_Screen': 'unlink',
-    'Relink_Screen': 'relink'
+    'Relink_Screen': 'relink',
+    'Link_Screen': 'link'
   };
 
   const payload = {
@@ -387,6 +417,8 @@ function fireAndForget(plain, screen) {
     parent_trade: plain.data?.parent_trade,
     source_trade: plain.data?.source_trade,
     selected_trade: plain.data?.selected_trade,
+    sale_trade: plain.data?.sale_trade,
+    purchase_trade: plain.data?.purchase_trade,
     addendum_text: plain.data?.addendum_text,
     modification_text: plain.data?.modification_text,
     note_text: plain.data?.note_text,
